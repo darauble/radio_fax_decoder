@@ -21,7 +21,7 @@ Providing a correction factor of 1.0000106 straightens it up:
 
 Currently there's no automatic correction, so usually it is by trial and error. Utility can be killed at any time after a few seconds to preview the slant. As it is really fast, there's no problem with that. 2 hours fax is usually parsed in a minute or two, that's quick enough.
 
-If there are multiple faxes recorded in one fax, you'll get one big picture. But if automatic alignmen works, all of them will be centered normally. It does not work sometimes with particular fax types, unfortunately.
+If there are multiple faxes recorded in one WAV file, you'll get one big picture. But if automatic alignmen works, all of them will be centered normally. It does not work sometimes with particular fax types, unfortunately.
 
 LPM can be provided. E.g. 60 for Kyodo News.
 
