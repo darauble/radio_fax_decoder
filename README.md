@@ -17,7 +17,7 @@ Default, uncorrected image might look slanted like this:
 
 Providing a correction factor of 1.0000106 straightens it up:
 
-<img src="example/example-slanted-image.png" width="300">
+<img src="example/example-straight-image.png" width="300">
 
 Currently there's no automatic correction, so usually it is by trial and error. Utility can be killed at any time after a few seconds to preview the slant. As it is really fast, there's no problem with that. 2 hours fax is usually parsed in a minute or two, that's quick enough.
 
