@@ -29,8 +29,8 @@ Center frequency by default is 1900, but can also be changed if required.
 
 Example usage:
 
-`./fax -s 1.0000055 -w ~/audio_2023-02-10_07-11-01_3853100Hz.wav`
-`./fax -s 1.0000091 -lpm 60 -c 1500 -w ~/audio_2023-02-05_09-40-01_16969500Hz.wav`
+* `./fax -s 1.0000055 -w ~/audio_2023-02-10_07-11-01_3853100Hz.wav`
+* `./fax -s 1.0000091 -lpm 60 -c 1500 -w ~/audio_2023-02-05_09-40-01_16969500Hz.wav`
 
 Also, if image is not centered automatically, utility can be given an amount of samples to drop, e.g. `-d 3000`.
 
