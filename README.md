@@ -64,7 +64,7 @@ For multiple faxes in one WAV file try `--auto_stop`, it will save wasted image 
 
 As simple as it can be, at least, on Linux.
 
-* `cd FAX`
+* `cd radio_fax_decoder`
 * `mkdir build`
 * `cd build`
 * `cmake ..`
