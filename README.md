@@ -59,3 +59,15 @@ For multiple faxes in one WAV file try `--auto_stop`, it will save wasted image 
 
 * "auto stop" can skip real image parts.
 * Automatic phasing is not very accurate.
+
+## Building
+
+As simple as it can be, at least, on Linux.
+
+* `cd FAX`
+* `mkdir build`
+* `cd build`
+* `cmake ..`
+* `make`
+
+Should to it.
