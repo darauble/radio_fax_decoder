@@ -49,7 +49,13 @@ public:
         int current;
     };
 
-    FaxDecoder() {}
+    FaxDecoder() { 
+        m_imgdata = NULL;
+        m_outImage = NULL;
+        m_skip = 0;
+        m_imageline = 0;
+        m_fax_line = 0;
+    }
         
     ~FaxDecoder() { FreeImage(); CleanUpBuffers(); }
 

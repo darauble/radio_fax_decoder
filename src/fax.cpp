@@ -27,7 +27,7 @@
  *                                                                                *
  **********************************************************************************
  */
-#define VERSION "1.0.0"
+#define VERSION "1.0.1"
 #include <cstdio>
 #include <cstring>
 #include <chrono>
@@ -61,8 +61,22 @@ int main(int argc, char *const * argv)
 {
     fprintf(stdout, "Radio Fax decoder v" VERSION "\n");
 
+    char *file_name = NULL;
+    double center_freq = 1900;
+    int lpm = 120;
+    double srcorr = 1.0;
+    long drop = 0;
+
+    int no_header = 0;
+    int no_phasing = 0;
+    int auto_stop = 0;
+
     static struct option long_options[] =
     {
+        {"no_header",   no_argument,  &no_header, 1},
+        {"no_phasing",  no_argument,  &no_phasing, 1},
+        {"auto_stop",   auto_stop,    &auto_stop, 1},
+
         {"wav_file",    required_argument, 0, 'w'},
         {"center_freq", required_argument, 0, 'f'},
         {"lpm",         required_argument, 0, 'l'},
@@ -72,13 +86,8 @@ int main(int argc, char *const * argv)
     };
 
     int opt_idx = 0;
-    char *file_name = NULL;
     int8_t c;
-    double center_freq = 1900;
-    int lpm = 120;
-    double srcorr = 1.0;
-    long drop = 0;
-    
+
     while(1) {
         c = getopt_long(argc, argv, "w:f:l:s:d:", long_options, &opt_idx);
 
@@ -100,7 +109,7 @@ int main(int argc, char *const * argv)
             break;
 
             case 's':
-                srcorr = atof(optarg);
+                srcorr = atof(optarg) / 1000000 + 1;
             break;
 
             case 'd':
@@ -148,9 +157,9 @@ int main(int argc, char *const * argv)
         400,
         FaxDecoder::firfilter::MIDDLE,     // bandwidth
         15.0,       // double minus_saturation_threshold
-        true,       // bool bIncludeHeadersInImages
-        true, // Phasing
-        false, // Autostop, not very useful, can cause dropouts in long faxes
+        !no_header,       // bool bIncludeHeadersInImages
+        !no_phasing, // Phasing
+        auto_stop, // Autostop, not very useful, can cause dropouts in long faxes
         false, // Debug
         false, // reset
         hdr.sample_rate,
@@ -189,7 +198,7 @@ int main(int argc, char *const * argv)
         }
 
         faxdec.ProcessSamples(inbuf, int(nread / hdr.channels), 0);
-        fprintf(stdout, "process...\n");
+        // fprintf(stdout, "process...\n");
     }
 
     faxdec.FileClose();
