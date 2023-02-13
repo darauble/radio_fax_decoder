@@ -546,8 +546,14 @@ void FaxDecoder::SetupBuffers()
 
 void FaxDecoder::FreeImage()
 {
-    kiwi_ifree(m_imgdata, "FreeImage");
-    kiwi_ifree(m_outImage, "FreeImage");
+    if (m_imgdata) {
+        kiwi_ifree(m_imgdata, "FreeImage");
+    }
+
+    if (m_outImage) {
+        kiwi_ifree(m_outImage, "FreeImage");
+    }
+
     m_imageline = 0;
     m_lineIncrAcc = 0;
 }
