@@ -18,7 +18,7 @@ Can read mono or stereo files.
 
 Radio faxes are very sensitive to transmitter and receiver clock differences. It is an analogue format, there is no "protocol" for finding the end of line. There is a phasing sequence, but it is usually too short to evaluate the drift properly (I tried it, doesn't work miracles). Also, digital sampling adds its own errors, as no soundcard provides "perfect" advertized sampling rate.
 
-So the best way is to try to decode the image, evaluate its tilt and provide a clock drift, which is usually miniscule.
+So the best way is to try to decode the image, evaluate its tilt and provide a clock drift, which is usually miniscule. Run decoder for a few seconds and kill it with CTRL+C, don't wait until full file is decoded. Evaluate, repeat.
 
 Clock drift can be adjusted by providing a difference from file's sample rate and
 (guessed) real rate. Default is 0. If there is a clock drift, it is provided in the millionth parts.
