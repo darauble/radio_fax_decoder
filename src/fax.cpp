@@ -27,10 +27,10 @@
  *                                                                                *
  **********************************************************************************
  */
-#define VERSION "1.0.1"
+#define VERSION "1.0.3"
 #include <cstdio>
 #include <cstring>
-#include <chrono>
+#include <filesystem>
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -66,15 +66,18 @@ int main(int argc, char *const * argv)
     int lpm = 120;
     double srcorr = 1.0;
     long drop = 0;
+    int pixels_width = 1809;
 
     int no_header = 0;
     int no_phasing = 0;
     int auto_stop = 0;
+    int remove_dc = 0;
 
     static struct option long_options[] =
     {
         {"no_header",   no_argument,  &no_header, 1},
         {"no_phasing",  no_argument,  &no_phasing, 1},
+        {"remove_dc",   no_argument,  &remove_dc, 1},
         {"auto_stop",   auto_stop,    &auto_stop, 1},
 
         {"wav_file",    required_argument, 0, 'w'},
@@ -82,6 +85,7 @@ int main(int argc, char *const * argv)
         {"lpm",         required_argument, 0, 'l'},
         {"srcorr",      required_argument, 0, 's'},
         {"drop",        required_argument, 0, 'd'},
+        {"pixels",      required_argument, 0, 'p'},
         {0, 0, 0, 0}
     };
 
@@ -115,6 +119,11 @@ int main(int argc, char *const * argv)
             case 'd':
                 drop = atol(optarg);
             break;
+
+            case 'p':
+                pixels_width = atoi(optarg);
+                printf("Pixels width set to %d\n", pixels_width);
+            break;
         }
     }
 
@@ -122,6 +131,10 @@ int main(int argc, char *const * argv)
         fprintf(stdout, "File name is required: -w <file name>\n");
         exit(-1);
     }
+
+    std::filesystem::path full_path = file_name;
+    std::filesystem::path local_name = full_path.filename().stem();
+    local_name +=  ".pgm";
     
     FILE *fd = fopen(file_name, "r");
     
@@ -151,7 +164,7 @@ int main(int argc, char *const * argv)
 
     faxdec.Configure(
         lpm,
-        1809,
+        pixels_width,
         8,
         center_freq,
         400,
@@ -166,14 +179,7 @@ int main(int argc, char *const * argv)
         srcorr
     );
 
-    std::time_t now = std::time(0);
-    std::tm *now_tm = std::gmtime(&now);
-
-    char buf[32];
-    snprintf(buf, 32, "%04d%02d%02dT%02d%02dZ.pgm",
-        (now_tm->tm_year + 1900), (now_tm->tm_mon + 1), now_tm->tm_mday, now_tm->tm_hour, now_tm->tm_min);
-
-    faxdec.FileOpen(buf);
+    faxdec.FileOpen(local_name.c_str());
 
     if (drop) {
         fseek(fd, ftell(fd) + (drop * sizeof(short)), SEEK_SET);
@@ -197,6 +203,20 @@ int main(int argc, char *const * argv)
             }
         }
 
+        if (remove_dc) {
+            int64_t sum = 0;
+
+            for (int i = 0; i < nread / hdr.channels; i++) {
+                sum += inbuf[i];
+            }
+
+            short avg = (short) (sum / (nread / hdr.channels));
+
+            for (int i = 0; i < nread / hdr.channels; i++) {
+                inbuf[i] -= avg;
+            }
+        }
+        // fprintf(stdout, "Start processing...\n");
         faxdec.ProcessSamples(inbuf, int(nread / hdr.channels), 0);
         // fprintf(stdout, "process...\n");
     }

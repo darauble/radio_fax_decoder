@@ -65,7 +65,7 @@ public:
                    bool use_phasing, bool autostop, int debug, bool reset, double sample_rate, double srcorr);
 
     void ProcessSamples(s2_t *samps, int nsamps, float shift);
-    void FileOpen(char *);
+    void FileOpen(const char *);
     void FileWrite(u1_t *data, int datalen);
     void FileClose();
     

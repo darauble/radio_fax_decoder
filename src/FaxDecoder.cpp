@@ -199,8 +199,8 @@ bool FaxDecoder::DecodeFaxLine()
         const int leewaylines = 4;
 
         faxprintf("FAX L%d %s cnt=%d prepare=%d\n", m_imageline, (type == START)? "START":"STOP", typecount,
-            typecount == m_StartStopLength*m_lpm/60.0 - leewaylines);
-        if (typecount == m_StartStopLength*m_lpm/60.0 - leewaylines) {
+            typecount == m_StartStopLength*2 - leewaylines);
+        if (typecount == m_StartStopLength*2 - leewaylines) {
             if (type == START /* && m_imageline < 100 */) {
                 /* prepare for phasing */
                 /* image start detected, reset image at 0 lines  */
@@ -276,7 +276,7 @@ bool FaxDecoder::DecodeFaxLine()
         if (!m_autostopped)
             DecodeImageLine(m_demod_data, m_SamplesPerLine, m_imgdata+imgpos);
         
-        fprintf(stdout, "Line decoded: %d\n", m_SamplesPerLine);
+        // fprintf(stdout, "Line decoded: %d\n", m_SamplesPerLine);
 
         phasingSkipData %= m_SamplesPerLine;
 
@@ -292,7 +292,7 @@ bool FaxDecoder::DecodeFaxLine()
         imgpos += m_imagewidth*m_imagecolors;
         m_imageline++;
 
-        fprintf(stdout, "Line decoded 3\n");
+        // fprintf(stdout, "Line decoded 3\n");
     }
 
     return true;
@@ -482,7 +482,7 @@ bool FaxDecoder::Configure(int lpm, int imagewidth, int BitsPerPixel, int carrie
     m_Start_IOC288_Frequency = 675;
     m_StopFrequency = 450;
     m_StartStopLength = 5;
-    m_phasingLines = 40;
+    m_phasingLines = 20;
     m_offset = 0;
     m_imgsize = 0;
 
@@ -569,9 +569,9 @@ void FaxDecoder::CleanUpBuffers()
 // Little bit of a security hole: Can look at previously saved fax images by downloading the fixed filename.
 // Not a big deal really.
 
-void FaxDecoder::FileOpen(char *fn)
+void FaxDecoder::FileOpen(const char *fn)
 {
-    m_fn = fn;
+    // m_fn = fn;
 
     FileClose();
     // asprintf(&m_fn, DIR_DATA "/fax.ch%d.pgm", m_rx_chan);
@@ -585,9 +585,9 @@ void FaxDecoder::FileOpen(char *fn)
     }
 
     if (m_file == NULL) {
-        faxprintf("FAX open FAILED %s\n", m_fn);
+        faxprintf("FAX open FAILED %s\n", fn);
     } else {
-        faxprintf("FAX open %s\n", m_fn);
+        faxprintf("FAX open %s\n", fn);
     }
 }
 
@@ -605,7 +605,7 @@ void FaxDecoder::FileWrite(u1_t *data, int datalen)
     
     fseek(m_file, m_offset, SEEK_SET);
     fprintf(m_file, "%6d", m_fax_line);
-
+    fprintf(stdout, "Lines decoded: %d\n", m_fax_line);
     fseek(m_file, pos, SEEK_SET);
 }
 
@@ -623,7 +623,8 @@ void FaxDecoder::FileClose()
     fprintf(m_file, "%6d", m_fax_line);
     
     fclose(m_file);
-    faxprintf("FAX %s wrote %d lines\n", m_fn, m_fax_line);
+    // faxprintf("FAX %s wrote %d lines\n", m_fn, m_fax_line);
+    faxprintf("FAX wrote %d lines\n", m_fax_line);
     
     m_file = NULL;
     m_fax_line = 0;
