@@ -93,7 +93,7 @@ int main(int argc, char *const * argv)
     int8_t c;
 
     while(1) {
-        c = getopt_long(argc, argv, "w:f:l:s:d:", long_options, &opt_idx);
+        c = getopt_long(argc, argv, "w:f:l:s:d:n", long_options, &opt_idx);
 
         if (c < 0) {
             break;
@@ -126,7 +126,7 @@ int main(int argc, char *const * argv)
             break;
 
             case 'n':
-                no_phasing = atoi(optarg);
+                no_phasing = 1;
             break;
         }
     }
