@@ -76,7 +76,6 @@ int main(int argc, char *const * argv)
     static struct option long_options[] =
     {
         {"no_header",   no_argument,  &no_header, 1},
-        {"no_phasing",  no_argument,  &no_phasing, 1},
         {"remove_dc",   no_argument,  &remove_dc, 1},
         {"auto_stop",   auto_stop,    &auto_stop, 1},
 
@@ -86,6 +85,7 @@ int main(int argc, char *const * argv)
         {"srcorr",      required_argument, 0, 's'},
         {"drop",        required_argument, 0, 'd'},
         {"pixels",      required_argument, 0, 'p'},
+        {"no_phasing",  required_argument, 0, 'n'},
         {0, 0, 0, 0}
     };
 
@@ -123,6 +123,10 @@ int main(int argc, char *const * argv)
             case 'p':
                 pixels_width = atoi(optarg);
                 printf("Pixels width set to %d\n", pixels_width);
+            break;
+
+            case 'n':
+                no_phasing = atoi(optarg);
             break;
         }
     }
