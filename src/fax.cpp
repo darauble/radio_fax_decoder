@@ -66,6 +66,7 @@ int main(int argc, char *const * argv)
     int lpm = 120;
     double srcorr = 1.0;
     long drop = 0;
+    long drop_lines = 0;
     int pixels_width = 1809;
 
     int no_header = 0;
@@ -84,6 +85,7 @@ int main(int argc, char *const * argv)
         {"lpm",         required_argument, 0, 'l'},
         {"srcorr",      required_argument, 0, 's'},
         {"drop",        required_argument, 0, 'd'},
+        {"drop_lines",  required_argument, 0, 'r'},
         {"pixels",      required_argument, 0, 'p'},
         {"no_phasing",  required_argument, 0, 'n'},
         {0, 0, 0, 0}
@@ -93,7 +95,7 @@ int main(int argc, char *const * argv)
     int8_t c;
 
     while(1) {
-        c = getopt_long(argc, argv, "w:f:l:s:d:n", long_options, &opt_idx);
+        c = getopt_long(argc, argv, "w:f:l:s:d:r:n", long_options, &opt_idx);
 
         if (c < 0) {
             break;
@@ -118,6 +120,10 @@ int main(int argc, char *const * argv)
 
             case 'd':
                 drop = atol(optarg);
+            break;
+
+            case 'r':
+                drop_lines = atol(optarg);
             break;
 
             case 'p':
@@ -185,6 +191,10 @@ int main(int argc, char *const * argv)
 
     faxdec.FileOpen(local_name.c_str());
 
+    if (drop_lines) {
+        drop += hdr.sample_rate * drop_lines * 60 / lpm;
+    }
+    
     if (drop) {
         fseek(fd, ftell(fd) + (drop * sizeof(short)), SEEK_SET);
     }
