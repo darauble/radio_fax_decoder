@@ -67,6 +67,7 @@ int main(int argc, char *const * argv)
     double srcorr = 1.0;
     long drop = 0;
     long drop_lines = 0;
+    long drop_pixels = 0;
     int pixels_width = 1809;
 
     int no_header = 0;
@@ -87,6 +88,7 @@ int main(int argc, char *const * argv)
         {"drop",        required_argument, 0, 'd'},
         {"drop_lines",  required_argument, 0, 'r'},
         {"pixels",      required_argument, 0, 'p'},
+        {"drop_pixels", required_argument, 0, 'x'},
         {"no_phasing",  required_argument, 0, 'n'},
         {0, 0, 0, 0}
     };
@@ -95,7 +97,7 @@ int main(int argc, char *const * argv)
     int8_t c;
 
     while(1) {
-        c = getopt_long(argc, argv, "w:f:l:s:d:r:n", long_options, &opt_idx);
+        c = getopt_long(argc, argv, "w:f:l:s:d:r:x:n", long_options, &opt_idx);
 
         if (c < 0) {
             break;
@@ -128,7 +130,11 @@ int main(int argc, char *const * argv)
 
             case 'p':
                 pixels_width = atoi(optarg);
-                printf("Pixels width set to %d\n", pixels_width);
+            break;
+
+            case 'x':
+                drop_pixels = atoi(optarg);
+                printf("Drop pixels: %ld\n", drop_pixels);
             break;
 
             case 'n':
@@ -193,6 +199,10 @@ int main(int argc, char *const * argv)
 
     if (drop_lines) {
         drop += hdr.sample_rate * drop_lines * 60 / lpm;
+    }
+
+    if (drop_pixels) {
+        drop += (long)((float)drop_pixels / pixels_width * hdr.sample_rate);
     }
     
     if (drop) {
