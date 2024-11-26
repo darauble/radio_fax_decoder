@@ -30,14 +30,13 @@
 #define VERSION "1.0.3"
 #include <cstdio>
 #include <cstring>
+#include <cstdint>
 #include <filesystem>
 
 #include <fcntl.h>
 #include <unistd.h>
-#include <stdint.h>
 #include <errno.h>
 #include <getopt.h>
-#include <fcntl.h>
 
 #include "FaxDecoder.h"
 
@@ -167,14 +166,17 @@ int main(int argc, char *const * argv)
     fprintf(stdout, "   Channels: %d\n", hdr.channels);
     fprintf(stdout, "        BPS: %d\n", hdr.bytes_per_sample);
 
-
-    int read_buf_size = hdr.sample_rate * hdr.channels;
-    auto readbuf = new short[read_buf_size];
-    short *inbuf;
-
     if (hdr.channels > 1) {
-        inbuf = new short[hdr.sample_rate];
+        fprintf(stderr, "FAX Decoder only supports MONO (1 channel) WAV files.\n");
+        return -1;
     }
+
+    const int buf_size_b = 10485760;
+    int read_buf_size = ((int)(((float)(buf_size_b / sizeof(int16_t)) / hdr.sample_rate))) * hdr.sample_rate;
+    fprintf(stdout, "read_buf_size: %d\n", read_buf_size);
+    
+    auto readbuf = new int16_t[read_buf_size];
+    int16_t *inbuf;
 
     FaxDecoder faxdec;
 
@@ -206,42 +208,34 @@ int main(int argc, char *const * argv)
     }
     
     if (drop) {
-        fseek(fd, ftell(fd) + (drop * sizeof(short)), SEEK_SET);
+        fseek(fd, ftell(fd) + (drop * sizeof(int16_t)), SEEK_SET);
     }
 
-    while (true) {
-        nread = fread(readbuf,  sizeof(short), hdr.sample_rate,fd);
-        
-        if (nread < 0) {
-            fprintf(stderr, "read() failed: %s\n", strerror(errno));
-            exit(EXIT_FAILURE);
-        }
-        if (nread == 0)
-            break;
-        
-        if (hdr.channels == 1) {
-            inbuf = readbuf;
-        } else {
-            for (int i = 0; i < nread / hdr.channels; i++) {
-                inbuf[i] = readbuf[i * hdr.channels];
-            }
-        }
+    while ((nread = fread(readbuf, sizeof(int16_t), read_buf_size, fd)) > 0) {
+        // if (remove_dc) {
+        //     int64_t sum = 0;
 
-        if (remove_dc) {
-            int64_t sum = 0;
+        //     for (int i = 0; i < nread / hdr.channels; i++) {
+        //         sum += inbuf[i];
+        //     }
 
-            for (int i = 0; i < nread / hdr.channels; i++) {
-                sum += inbuf[i];
-            }
+        //     int16_t avg = (int16_t) (sum / (nread / hdr.channels));
 
-            short avg = (short) (sum / (nread / hdr.channels));
-
-            for (int i = 0; i < nread / hdr.channels; i++) {
-                inbuf[i] -= avg;
-            }
-        }
+        //     for (int i = 0; i < nread / hdr.channels; i++) {
+        //         inbuf[i] -= avg;
+        //     }
+        // }
         // fprintf(stdout, "Start processing...\n");
-        faxdec.ProcessSamples(inbuf, int(nread / hdr.channels), 0);
+
+        int sample_length = hdr.sample_rate;
+
+        for (int32_t i = 0; i < nread; i += hdr.sample_rate) {
+            if (nread - i < hdr.sample_rate) {
+                sample_length = nread - i;
+            }
+            inbuf = &readbuf[i];
+            faxdec.ProcessSamples(inbuf, sample_length, 0);
+        }
         // fprintf(stdout, "process...\n");
     }
 
@@ -250,10 +244,6 @@ int main(int argc, char *const * argv)
     fclose(fd);
     
     delete readbuf;
-
-    if (hdr.channels > 1) {
-        delete inbuf;
-    }
 
     return 0;
 }

@@ -1,6 +1,14 @@
 # radio_fax_decoder
 
 Utility to decode radio fax from recorded WAV file. Parts taken from Kiwi SDR repository at https://github.com/jks-prv/Beagle_SDR_GPS/
+## V1.0.3
+
+A few cumulative changes:
+* Drop an amount of lines with `--drop_lines` / `-r` option (slant not taken into account, only samples per sec and LPM)
+* Drop an amount of pixels with `--drop_pixels` / `-x` option (slant not taken into account)
+* Use original file name instead of the generated, only replace the extension
+* Use `-n` shorthand for the option to drop samples
+* Add some speed by loading more bytes into memory, leaving only mono (1 channel) support and tweaking GCC options
 
 ## V1.0.1
 

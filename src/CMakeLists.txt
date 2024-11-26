@@ -1,3 +1,5 @@
+add_compile_options(-Ofast -ftree-loop-vectorize -ftree-vectorize)
+
 add_library(libfax STATIC FaxDecoder.cpp)
 
 add_executable(fax fax.cpp)
