@@ -17,7 +17,7 @@ Boston, MA  02110-1301, USA.
 
 // Copyright (c) 2014-2016 John Seamons, ZL/KF6VO
 
-#include "types.h"
+//#include "types.h"
 #include "config.h"
 #include "kiwi.h"
 #include "valgrind.h"

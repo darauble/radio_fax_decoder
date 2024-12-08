@@ -27,7 +27,7 @@
  *                                                                                *
  **********************************************************************************
  */
-#define VERSION "1.0.3"
+#define VERSION "1.0.4"
 #include <cstdio>
 #include <cstring>
 #include <cstdint>
@@ -171,7 +171,12 @@ int main(int argc, char *const * argv)
         return -1;
     }
 
-    const int buf_size_b = 10485760;
+    int buf_size_b = 1048576;
+
+    if (no_phasing) {
+        buf_size_b *= 10;
+    }
+
     int read_buf_size = ((int)(((float)(buf_size_b / sizeof(int16_t)) / hdr.sample_rate))) * hdr.sample_rate;
     fprintf(stdout, "read_buf_size: %d\n", read_buf_size);
     

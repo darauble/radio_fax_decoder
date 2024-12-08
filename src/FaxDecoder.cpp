@@ -28,7 +28,7 @@
   // which is
   // adapted from github.com/seandepagnier/weatherfax_pi
 
-#include "types.h"
+//#include "types.h"
 #include "FaxDecoder.h"
 #include "mem.h"
 
@@ -50,24 +50,24 @@
 /* Note: the decoding algorithms are adapted from yahfax (on sourceforge)
    which was an improved adaptation of hamfax. */
 
-static TYPEREAL apply_firfilter(FaxDecoder::firfilter *filter, TYPEREAL sample)
+static float apply_firfilter(FaxDecoder::firfilter *filter, float sample)
 {
 // Narrow, middle and wide fir low pass filter from ACfax
     #define TAP_COUNT 17
-    const int tap_count = TAP_COUNT;
-    const TYPEREAL lpfcoeff[3][TAP_COUNT] = {
+    const int32_t tap_count = TAP_COUNT;
+    const float lpfcoeff[3][TAP_COUNT] = {
           { -7, -18, -15,  11,  56, 116, 177, 223, 240, 223, 177, 116,  56,  11, -15, -18,  -7},
           {  0, -18, -38, -39,   0,  83, 191, 284, 320, 284, 191,  83,   0, -39, -38, -18,   0},
           {  6,  20,   7, -42, -74, -12, 159, 353, 440, 353, 159, -12, -74, -42,   7,  20,   6}
     };
 
-    const TYPEREAL *c = lpfcoeff[filter->bandwidth];
-    const TYPEREAL *c_end = lpfcoeff[filter->bandwidth] + ((sizeof *lpfcoeff) / (sizeof **lpfcoeff));
-    TYPEREAL* const b_begin = filter->buffer;
-    TYPEREAL* const b_end = filter->buffer + tap_count;
-    TYPEREAL sum = 0;
+    const float *c = lpfcoeff[filter->bandwidth];
+    const float *c_end = lpfcoeff[filter->bandwidth] + ((sizeof *lpfcoeff) / (sizeof **lpfcoeff));
+    float* const b_begin = filter->buffer;
+    float* const b_end = filter->buffer + tap_count;
+    float sum = 0;
     
-    TYPEREAL *current = filter->buffer + filter->current;
+    float *current = filter->buffer + filter->current;
     // replace oldest value with current
     *current = sample;
     
@@ -88,11 +88,11 @@ static TYPEREAL apply_firfilter(FaxDecoder::firfilter *filter, TYPEREAL sample)
 
 int qsort_intcomp(const void *elem1, const void *elem2)
 {
-	const int i1 = *(const int *) elem1, i2 = *(const int *) elem2;
+	const int32_t i1 = *(const int32_t *) elem1, i2 = *(const int32_t *) elem2;
 	return i1 - i2;
 }
 
-int median_i(int *i, int len, int *pct_1, int *pct_2)
+int median_i(int *i, int32_t len, int32_t *pct_1, int32_t *pct_2)
 {
      qsort(i, len, sizeof *i, qsort_intcomp);
      if (pct_1) *pct_1 = i[(int) (len * ((float) *pct_1 / 100.0))];
@@ -109,11 +109,11 @@ int median_i(int *i, int len, int *pct_1, int *pct_2)
 }*/
 
 /* perform fourier transform at a specific frequency to look for start/stop */
-TYPEREAL FaxDecoder::FourierTransformSub(u1_t* buffer, int samps_per_line, int buffer_len, int freq)
+float FaxDecoder::FourierTransformSub(uint8_t* buffer, int32_t samps_per_line, int32_t buffer_len, int32_t freq)
 {
-    int i, n;
-    TYPEREAL k = -2 * M_PI * freq * 60.0 / m_lpm / samps_per_line;
-    TYPEREAL retr = 0, reti = 0;
+    int32_t i, n;
+    float k = -2 * M_PI * freq * 60.0 / m_lpm / samps_per_line;
+    float retr = 0, reti = 0;
     
     for (n=0, i=1; n < buffer_len; n++, i++) {
         retr += buffer[n]*MCOS(k*n);
@@ -123,11 +123,11 @@ TYPEREAL FaxDecoder::FourierTransformSub(u1_t* buffer, int samps_per_line, int b
 }
 
 /* see if the fourier transform at the start and stop frequencies reveils header */
-FaxDecoder::Header FaxDecoder::DetectLineType(u1_t* buffer, int samps_per_line, int buffer_len)
+FaxDecoder::Header FaxDecoder::DetectLineType(uint8_t* buffer, int32_t samps_per_line, int32_t buffer_len)
 {
-     const int threshold = 5; /* 5 is pretty arbitrary but works in practice even with lots of noise */
-     TYPEREAL start_det = FourierTransformSub(buffer, samps_per_line, buffer_len, m_Start_IOC576_Frequency) / buffer_len;
-     TYPEREAL stop_det = FourierTransformSub(buffer, samps_per_line, buffer_len, m_StopFrequency) / buffer_len;
+     const int32_t threshold = 5; /* 5 is pretty arbitrary but works in practice even with lots of noise */
+     float start_det = FourierTransformSub(buffer, samps_per_line, buffer_len, m_Start_IOC576_Frequency) / buffer_len;
+     float stop_det = FourierTransformSub(buffer, samps_per_line, buffer_len, m_StopFrequency) / buffer_len;
     faxprintf("FAX start_det=%.2f stop_det=%.2f\n", start_det, stop_det);
 
      if (start_det > threshold)
@@ -142,19 +142,19 @@ FaxDecoder::Header FaxDecoder::DetectLineType(u1_t* buffer, int samps_per_line, 
    with a ^ shaped wedge, find positon it fits to the minimum.
 
    This isn't very fast, but only is used for phasing lines */
-int FaxDecoder::FaxPhasingLinePosition(u1_t *image, int samplesPerLine)
+int FaxDecoder::FaxPhasingLinePosition(uint8_t *image, int32_t samplesPerLine)
 {
-    int n = samplesPerLine * .07;
-    int i;
-    int mintotal = -1, min = 0;
+    int32_t n = samplesPerLine * .07;
+    int32_t i;
+    int32_t mintotal = -1, min = 0;
     
     // reduce computational load by making loops below sparse 
     #define PIXEL_RESOLUTION 4
-    int sampsIncr = samplesPerLine/m_imagewidth * PIXEL_RESOLUTION;
+    int32_t sampsIncr = samplesPerLine/m_imagewidth * PIXEL_RESOLUTION;
     
     //u4_t start = timer_us();
     for (i = 0; i<samplesPerLine; i += sampsIncr) {
-        int total = 0, j;
+        int32_t total = 0, j;
         for (j = 0; j<n; j += PIXEL_RESOLUTION)
             total += (n/2 - abs(j-n/2)) * (255 - image[(i+j) % samplesPerLine]);
         if (total < mintotal || mintotal == -1) {
@@ -170,7 +170,7 @@ int FaxDecoder::FaxPhasingLinePosition(u1_t *image, int samplesPerLine)
 
 bool FaxDecoder::DecodeFaxLine()
 {
-    const int phasingSkipLines = 2;
+    const int32_t phasingSkipLines = 2;
     
     DemodulateData();
 
@@ -179,7 +179,7 @@ bool FaxDecoder::DecodeFaxLine()
         type = IMAGE;
     } else {
         // processing all the line samples for low LPM is too expensive
-        int buffer_len = MIN(m_SamplesPerLine, 3000);
+        int32_t buffer_len = MIN(m_SamplesPerLine, 3000);
         type = DetectLineType(m_demod_data, m_SamplesPerLine, buffer_len);
     }
 
@@ -196,7 +196,7 @@ bool FaxDecoder::DecodeFaxLine()
     if (type != IMAGE) { /* if type is start or stop */
         /* require 4 less lines than there really are to handle
            noise and also misalignment on first and last lines */
-        const int leewaylines = 4;
+        const int32_t leewaylines = 4;
 
         faxprintf("FAX L%d %s cnt=%d prepare=%d\n", m_imageline, (type == START)? "START":"STOP", typecount,
             typecount == m_StartStopLength*2 - leewaylines);
@@ -242,7 +242,7 @@ bool FaxDecoder::DecodeFaxLine()
             // DetectLineType() sometimes returns START during IMAGEs with sparse black text on a white background.
             // If the extension was started in the middle of a fax transmission this can result in a false phasing align.
             // Filter that out by looking at the 10%/90% distribution width of the phasing data.
-            int ten_pct = 10, ninety_pct = 90;
+            int32_t ten_pct = 10, ninety_pct = 90;
             phasingSkipData = median_i(phasingPos, m_phasingLines - phasingSkipLines, &ten_pct, &ninety_pct);
             fprintf(stdout, "FAX L%d SET phasingSkipData=%d 10%%=%d 90%%=%d\n", m_imageline, phasingSkipData, ten_pct, ninety_pct);
             if ((ninety_pct - ten_pct) > m_SamplesPerLine/6) {
@@ -256,7 +256,7 @@ bool FaxDecoder::DecodeFaxLine()
     if (m_bIncludeHeadersInImages || !m_use_phasing || (type == IMAGE && phasingLinesLeft < -phasingSkipLines)) {
         if (m_imageline >= height) {
             height *= 2;
-            m_imgdata = (u1_t*) kiwi_irealloc("DecodeFaxLine", m_imgdata, m_imagewidth*height*m_imagecolors);
+            m_imgdata = (uint8_t*) kiwi_irealloc("DecodeFaxLine", m_imgdata, m_imagewidth*height*m_imagecolors);
             fprintf(stdout, "Kiwi realloc %d, %d, %d\n", m_imagewidth, height, m_imagecolors);
         }
 
@@ -301,7 +301,7 @@ bool FaxDecoder::DecodeFaxLine()
 void FaxDecoder::DemodulateData()
 {
     double f=0, ph_inc;
-    int i, j, pixel;
+    int32_t i, j, pixel;
 
     // update sps for mixers
     // UpdateSampleRate();
@@ -315,28 +315,28 @@ void FaxDecoder::DemodulateData()
     
     ph_inc = m_carrier/m_SamplesPerSec_frac;
 
-    TYPEREAL scale = -1.3 * (m_SamplesPerSec_nom/m_deviation/8);
+    float scale = -1.3 * (m_SamplesPerSec_nom/m_deviation/8);
     for (i=0, j=1; i < m_SamplesPerLine; i++, j++) {
         // mix to carrier so start/stop/black/white freqs will be relative to zero
 
-        static TYPEREAL normalize_sample = 1.0/32768.0;
-        TYPEREAL samp = m_samples[i] * normalize_sample;      // -1..0..1
+        static float normalize_sample = 1.0/32768.0;
+        float samp = m_samples[i] * normalize_sample;      // -1..0..1
 
-        TYPEREAL Icur = apply_firfilter(firfilters+0, samp*MCOS(K_2PI*f));
-        TYPEREAL Qcur = apply_firfilter(firfilters+1, samp*MSIN(K_2PI*f));
+        float Icur = apply_firfilter(firfilters+0, samp*MCOS(K_2PI*f));
+        float Qcur = apply_firfilter(firfilters+1, samp*MSIN(K_2PI*f));
 
         f += ph_inc;
         if (f > 1.0) f -= 1.0;      // keep bounded
         
-        TYPEREAL mag = MSQRT(Qcur*Qcur + Icur*Icur);
+        float mag = MSQRT(Qcur*Qcur + Icur*Icur);
         Icur /= mag;
         Qcur /= mag;
 
-        TYPEREAL x = (Icur*(Qcur-Qprev) - Qcur*(Icur-Iprev)) * scale;
+        float x = (Icur*(Qcur-Qprev) - Qcur*(Icur-Iprev)) * scale;
         x = x/2.0 + 0.5;
         pixel = x*255.0;
         pixel = (pixel < 0)? 0 : ((pixel > 255)? 255 : pixel);   // clamp
-        m_demod_data[i] = (u1_t) pixel;
+        m_demod_data[i] = (uint8_t) pixel;
 
         Iprev = Icur;
         Qprev = Qcur;
@@ -348,25 +348,25 @@ void FaxDecoder::DemodulateData()
     Buffer should contain m_SamplesPerSec_nom*60.0/m_lpm*colors bytes.
     Image will contain imagewidth*colors bytes.
 */
-void FaxDecoder::DecodeImageLine(u1_t* buffer, int buffer_len, u1_t *image)
+void FaxDecoder::DecodeImageLine(uint8_t* buffer, int32_t buffer_len, uint8_t *image)
 {
-    int pixel;
+    int32_t pixel;
     //int n = m_SamplesPerSec_nom*60.0/m_lpm;
-    int spl = m_SamplesPerLine;
+    int32_t spl = m_SamplesPerLine;
 
     if (buffer_len != spl) {
         faxprintf("FAX m_SamplesPerSec_nom=%.1f buffer_len=%d spl=%d\n", m_SamplesPerSec_nom, buffer_len, spl);
         fprintf(stderr, "DecodeImageLine requires specific buffer length");
     }
 
-    int i, j;
+    int32_t i, j;
 
     for (i = 0; i < m_imagewidth; i++) {
         
-        int firstsample = spl * i/m_imagewidth;
-        int lastsample = spl * (i+1)/m_imagewidth - 1;
+        int32_t firstsample = spl * i/m_imagewidth;
+        int32_t lastsample = spl * (i+1)/m_imagewidth - 1;
         // fprintf(stdout, "  decode 2...\n");
-        int pixelSamples = 0, sample = firstsample;
+        int32_t pixelSamples = 0, sample = firstsample;
         pixel = 0;
 
         do {
@@ -390,7 +390,7 @@ void FaxDecoder::DecodeImageLine(u1_t* buffer, int buffer_len, u1_t *image)
                 m_linePrevBlend = 1.0 - m_lineNextBlend;
                 j = -m_imagewidth;
                 for (i = 0; i < m_imagewidth; i++, j++) {
-                    pixel = roundf((TYPEREAL)image[i] * m_lineNextBlend + (TYPEREAL)image[j] * m_linePrevBlend);
+                    pixel = roundf((float)image[i] * m_lineNextBlend + (float)image[j] * m_linePrevBlend);
                     pixel = MIN(255, pixel);
                     m_outImage[i] = pixel;
                 }
@@ -408,16 +408,16 @@ void FaxDecoder::DecodeImageLine(u1_t* buffer, int buffer_len, u1_t *image)
     }
 }
 
-void FaxDecoder::ProcessSamples(s2_t *samps, int nsamps, float shift)
+void FaxDecoder::ProcessSamples(int16_t *samps, int32_t nsamps, float shift)
 {
-    int i = 0;
+    int32_t i = 0;
     
     if (m_bEndDecoding) return;
     
     if (shift) m_skip = shift * m_SamplesPerLine;
 
     if (m_skip) {
-        int skip = MIN(nsamps, m_skip);
+        int32_t skip = MIN(nsamps, m_skip);
         nsamps -= skip;
         samps = &samps[skip];
         faxprintf("FAX m_skip %d skip %d\n", m_skip, skip);
@@ -449,8 +449,8 @@ void FaxDecoder::InitializeImage()
         height = 256;
 
     FreeImage();
-    m_imgdata  = (u1_t*) kiwi_imalloc("InitializeImage", m_imagewidth*height*m_imagecolors);
-    m_outImage = (u1_t*) kiwi_imalloc("InitializeImage", m_imagewidth*m_imagecolors);
+    m_imgdata  = (uint8_t*) kiwi_imalloc("InitializeImage", m_imagewidth*height*m_imagecolors);
+    m_outImage = (uint8_t*) kiwi_imalloc("InitializeImage", m_imagewidth*m_imagecolors);
 
     lasttype = IMAGE;
     typecount = 0;
@@ -458,11 +458,11 @@ void FaxDecoder::InitializeImage()
     m_autostopped = false;
 }
 
-bool FaxDecoder::Configure(int lpm, int imagewidth, int BitsPerPixel, int carrier,
-                           int deviation, enum firfilter::Bandwidth bandwidth,
+bool FaxDecoder::Configure(int lpm, int32_t imagewidth, int32_t BitsPerPixel, int32_t carrier,
+                           int32_t deviation, enum firfilter::Bandwidth bandwidth,
                            double minus_saturation_threshold,
                            bool bIncludeHeadersInImages, bool use_phasing, bool autostop,
-                           int debug, bool reset, double sample_rate, double srcorr)
+                           int32_t debug, bool reset, double sample_rate, double srcorr)
 {
     // m_rx_chan = rx_chan;
     m_BitsPerPixel = BitsPerPixel;
@@ -530,10 +530,10 @@ void FaxDecoder::SetupBuffers()
     faxprintf("FAX SamplesPerSec=%.3f/%.0f lpm=%d SamplesPerLine=%d\n",
         m_SamplesPerSec_frac, m_SamplesPerSec_nom, m_lpm, m_SamplesPerLine);
     
-    m_samples = new s2_t[m_SamplesPerLine];
+    m_samples = new int16_t[m_SamplesPerLine];
     m_samp_idx = 0;
     m_fi = 0;
-    m_demod_data = new u1_t[m_SamplesPerLine];
+    m_demod_data = new uint8_t[m_SamplesPerLine];
 
     phasingPos = new int[m_phasingLines];
     phasingLinesLeft = phasingSkipData = 0;
@@ -591,7 +591,7 @@ void FaxDecoder::FileOpen(const char *fn)
     }
 }
 
-void FaxDecoder::FileWrite(u1_t *data, int datalen)
+void FaxDecoder::FileWrite(uint8_t *data, int32_t datalen)
 {
     if (m_file == NULL) return;
     
@@ -601,7 +601,7 @@ void FaxDecoder::FileWrite(u1_t *data, int datalen)
     // With each data write to the file update image header too,
     // so it would be readable if utility is killed midst processing.
     // Usefull for partial decode, when image tilt is evaluated by eye.
-    int pos = ftell(m_file);
+    int32_t pos = ftell(m_file);
     
     fseek(m_file, m_offset, SEEK_SET);
     fprintf(m_file, "%6d", m_fax_line);

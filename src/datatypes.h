@@ -9,7 +9,7 @@
 
 #pragma once
 
-#include "types.h"
+//#include "types.h"
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
@@ -20,30 +20,30 @@
 //define single or double precision reals and complex types
 
 typedef struct {
-	f32_t re;
-	f32_t im;
+	float re;
+	float im;
 } tSComplex;
 
 typedef struct {
-	d64_t re;
-	d64_t im;
+	double re;
+	double im;
 } tDComplex;
 
 typedef struct {
-	s2_t left;
-	s2_t right;
+	int16_t left;
+	int16_t right;
 } tStereo16;
 
 typedef struct {
-	s4_t left;
-	s4_t right;
+	int32_t left;
+	int32_t right;
 } tStereo24;
 
 #ifdef USE_DOUBLE_PRECISION
- #define TYPEREAL	d64_t
+ #define TYPEREAL	double
  #define TYPECPX	tDComplex
 #else
- #define TYPEREAL	f32_t
+ #define TYPEREAL	float
  #define TYPECPX	tSComplex
 #endif
 
@@ -93,9 +93,12 @@ typedef struct {
  #define MFFTW_EXECUTE fftwf_execute
 #endif
 
+#define MAX(a,b) ((a)>(b)?(a):(b))
+#define MIN(a,b) ((a)<(b)?(a):(b))
+
 #define TYPESTEREO16    tStereo16
 #define TYPESTEREO24    tStereo24
-#define TYPEMONO16      s2_t
+#define TYPEMONO16      int16_t
 
 #define K_AMPMAX 32767.0	//maximum sin wave Pk for 16 bit input data
 
