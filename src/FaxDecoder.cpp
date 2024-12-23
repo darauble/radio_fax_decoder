@@ -284,7 +284,8 @@ bool FaxDecoder::DecodeFaxLine()
             m_skip = phasingSkipData;
             have_phasing = true;
             // ext_send_msg(m_rx_chan, false, "EXT fax_phased");
-            faxprintf("FAX L%d USE phasingSkipData=%d\n", m_imageline, phasingSkipData);
+            // faxprintf("FAX L%d USE phasingSkipData=%d\n", m_imageline, phasingSkipData);
+            faxprintf("FAX L%d USE phasingSkipData=%d\n", m_fax_line, phasingSkipData);
         }
         
         
@@ -605,7 +606,11 @@ void FaxDecoder::FileWrite(uint8_t *data, int32_t datalen)
     
     fseek(m_file, m_offset, SEEK_SET);
     fprintf(m_file, "%6d", m_fax_line);
-    fprintf(stdout, "Lines decoded: %d\n", m_fax_line);
+    
+    if (m_fax_line % 100 == 0) {
+        fprintf(stdout, "Lines decoded: %d\n", m_fax_line);
+    }
+
     fseek(m_file, pos, SEEK_SET);
 }
 

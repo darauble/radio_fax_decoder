@@ -27,7 +27,7 @@
  *                                                                                *
  **********************************************************************************
  */
-#define VERSION "1.0.4"
+#define VERSION "1.0.5"
 #include <cstdio>
 #include <cstring>
 #include <cstdint>
@@ -37,7 +37,9 @@
 #include <unistd.h>
 #include <errno.h>
 #include <getopt.h>
+#include <time.h>
 
+#include "avg.h"
 #include "FaxDecoder.h"
 
 struct wav_header_t {
@@ -61,18 +63,18 @@ int main(int argc, char *const * argv)
     fprintf(stdout, "Radio Fax decoder v" VERSION "\n");
 
     char *file_name = NULL;
-    double center_freq = 1900;
-    int lpm = 120;
-    double srcorr = 1.0;
-    long drop = 0;
-    long drop_lines = 0;
-    long drop_pixels = 0;
-    int pixels_width = 1809;
+    double center_freq {1900};
+    uint8_t lpm {120};
+    double srcorr {1.0};
+    uint32_t drop {0};
+    uint32_t drop_lines {0};
+    uint32_t drop_pixels {0};
+    uint32_t pixels_width {1809};
 
-    int no_header = 0;
-    int no_phasing = 0;
-    int auto_stop = 0;
-    int remove_dc = 0;
+    int no_header {0};
+    int no_phasing {0};
+    int auto_stop {0};
+    int remove_dc {0};
 
     static struct option long_options[] =
     {
@@ -133,7 +135,6 @@ int main(int argc, char *const * argv)
 
             case 'x':
                 drop_pixels = atoi(optarg);
-                printf("Drop pixels: %ld\n", drop_pixels);
             break;
 
             case 'n':
@@ -217,24 +218,28 @@ int main(int argc, char *const * argv)
     }
 
     while ((nread = fread(readbuf, sizeof(int16_t), read_buf_size, fd)) > 0) {
-        // if (remove_dc) {
-        //     int64_t sum = 0;
+        if (remove_dc) {
+            // ****** Time test *******
+            /*clock_t start, end;
+            start = clock();
+            float favg = int16_float_average(readbuf, nread);
+            end = clock();
 
-        //     for (int i = 0; i < nread / hdr.channels; i++) {
-        //         sum += inbuf[i];
-        //     }
-
-        //     int16_t avg = (int16_t) (sum / (nread / hdr.channels));
-
-        //     for (int i = 0; i < nread / hdr.channels; i++) {
-        //         inbuf[i] -= avg;
-        //     }
-        // }
+            printf("Calculated Float DC average: %d\n", (int16_t)favg);
+            printf("Calculated DC average: %f\n", favg);
+            printf("DC float average time: %f on %zu\n", ((double)(end - start)) / CLOCKS_PER_SEC, nread);
+            //*/
+            float avg = FLOAT_AVERAGE(readbuf, nread);
+     
+            for (uint64_t i = 0; i < nread; i++) {
+                readbuf[i] -= (int16_t)avg;
+            }
+        }
         // fprintf(stdout, "Start processing...\n");
 
         int sample_length = hdr.sample_rate;
 
-        for (int32_t i = 0; i < nread; i += hdr.sample_rate) {
+        for (uint64_t i = 0; i < nread; i += hdr.sample_rate) {
             if (nread - i < hdr.sample_rate) {
                 sample_length = nread - i;
             }
