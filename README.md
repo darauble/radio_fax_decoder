@@ -1,6 +1,18 @@
 # radio_fax_decoder
 
 Utility to decode radio fax from recorded WAV file. Parts taken from Kiwi SDR repository at https://github.com/jks-prv/Beagle_SDR_GPS/
+
+## V1.0.5
+
+Finally working DC offset filter (counting average and subtracting it from samples, when shifted).
+
+Had fun with optimizing average calculation with AVX-512 (Intel) and NEON (ARM) intrinsics.
+
+## V1.0.4
+
+Some GCC flags to improve the speed of decoding, changing types to standard ones and adding initial values to work on
+Raspberry Pi with Bullseye and GCC 10.
+
 ## V1.0.3
 
 A few cumulative changes:
