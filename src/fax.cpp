@@ -27,7 +27,7 @@
  *                                                                                *
  **********************************************************************************
  */
-#define VERSION "1.0.5"
+#define VERSION "1.0.6"
 #include <cstdio>
 #include <cstring>
 #include <cstdint>
@@ -66,10 +66,12 @@ int main(int argc, char *const * argv)
     double center_freq {1900};
     uint8_t lpm {120};
     double srcorr {1.0};
-    uint32_t drop {0};
-    uint32_t drop_lines {0};
-    uint32_t drop_pixels {0};
+    // Use "long" to comply with "fseek" API
+    long drop {0};
+    long drop_lines {0};
+    long drop_pixels {0};
     uint32_t pixels_width {1809};
+    uint32_t line_limit {0};
 
     int no_header {0};
     int no_phasing {0};
@@ -91,6 +93,7 @@ int main(int argc, char *const * argv)
         {"pixels",      required_argument, 0, 'p'},
         {"drop_pixels", required_argument, 0, 'x'},
         {"no_phasing",  required_argument, 0, 'n'},
+        {"line_limit",  required_argument, 0, 'L'},
         {0, 0, 0, 0}
     };
 
@@ -98,7 +101,7 @@ int main(int argc, char *const * argv)
     int8_t c;
 
     while(1) {
-        c = getopt_long(argc, argv, "w:f:l:s:d:r:x:n", long_options, &opt_idx);
+        c = getopt_long(argc, argv, "w:f:l:s:d:r:x:nL:", long_options, &opt_idx);
 
         if (c < 0) {
             break;
@@ -139,6 +142,10 @@ int main(int argc, char *const * argv)
 
             case 'n':
                 no_phasing = 1;
+            break;
+
+            case 'L':
+                line_limit = atoi(optarg);
             break;
         }
     }
@@ -181,7 +188,8 @@ int main(int argc, char *const * argv)
     int read_buf_size = ((int)(((float)(buf_size_b / sizeof(int16_t)) / hdr.sample_rate))) * hdr.sample_rate;
     fprintf(stdout, "read_buf_size: %d\n", read_buf_size);
     
-    auto readbuf = new int16_t[read_buf_size];
+    // auto readbuf = new int16_t[read_buf_size];
+    auto readbuf = (int16_t *)operator new (sizeof(int16_t) * read_buf_size, std::align_val_t(64));
     int16_t *inbuf;
 
     FaxDecoder faxdec;
@@ -200,7 +208,8 @@ int main(int argc, char *const * argv)
         false, // Debug
         false, // reset
         hdr.sample_rate,
-        srcorr
+        srcorr,
+        line_limit
     );
 
     faxdec.FileOpen(local_name.c_str());
@@ -217,6 +226,8 @@ int main(int argc, char *const * argv)
         fseek(fd, ftell(fd) + (drop * sizeof(int16_t)), SEEK_SET);
     }
 
+    bool continue_reading = true;
+
     while ((nread = fread(readbuf, sizeof(int16_t), read_buf_size, fd)) > 0) {
         if (remove_dc) {
             // ****** Time test *******
@@ -231,9 +242,7 @@ int main(int argc, char *const * argv)
             //*/
             float avg = FLOAT_AVERAGE(readbuf, nread);
      
-            for (uint64_t i = 0; i < nread; i++) {
-                readbuf[i] -= (int16_t)avg;
-            }
+            SAMPLES_SUBTRACT(readbuf, nread, avg);
         }
         // fprintf(stdout, "Start processing...\n");
 
@@ -244,7 +253,15 @@ int main(int argc, char *const * argv)
                 sample_length = nread - i;
             }
             inbuf = &readbuf[i];
-            faxdec.ProcessSamples(inbuf, sample_length, 0);
+            continue_reading = faxdec.ProcessSamples(inbuf, sample_length, 0);
+
+            if (!continue_reading) {
+                break;
+            }
+        }
+
+        if (!continue_reading) {
+            break;
         }
         // fprintf(stdout, "process...\n");
     }

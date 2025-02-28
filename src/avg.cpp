@@ -21,6 +21,12 @@ double int16_average(const int16_t *data, const size_t size) {
     return avg;
 }
 
+void int16_subtract(int16_t *data, const size_t size, int16_t avg) {
+    for (size_t i = 0; i < size; i++) {
+        data[i] -= avg;
+    }
+}
+
 #if defined(__AVX512F__) && defined(__AVX512DQ__)
 float int16_float_avx512_average(const int16_t *data, const size_t size) {
     if (size < 256) {
@@ -94,6 +100,34 @@ double int16_avx512_average(const int16_t *data, const size_t size) {
     }
 
     return avg;
+}
+
+void int16_avx512_subtract(int16_t *data, const size_t size, int16_t avg) {
+    if (size < 32) {
+        return int16_subtract(data, size, avg);
+    }
+
+    int16_t avgs[32];
+
+    for (size_t i = 0; i < 32; i++) {
+        avgs[i] = avg;
+    }
+// printf("SUBTRACT AVX\n");
+    __m512i avg_vec = _mm512_loadu_si512(avgs);
+
+    for (size_t i {0}; i < size; i += 32) {
+        __m512i data_vec = _mm512_loadu_si512(&data[i]);
+        __m512i diff_vec = _mm512_sub_epi16(data_vec, avg_vec);
+        _mm512_storeu_si512(&data[i], diff_vec);
+    }
+
+    size_t remainder = size % 32;
+
+    if (remainder > 0) {
+        for (size_t i {size - remainder}; i < size; i++) {
+            data[i] -= avg;
+        }
+    }
 }
 #elif defined(__ARM_NEON)
 float int16_float_neon_average(const int16_t *data, const size_t size) {

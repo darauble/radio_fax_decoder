@@ -75,7 +75,8 @@ public:
         m_skip {0},
         m_imageline {0},
         m_fax_line {0},
-        m_bIncludeHeadersInImages {true}
+        m_bIncludeHeadersInImages {true},
+        m_lineLimit {0}
     { 
         
     }
@@ -85,9 +86,9 @@ public:
     bool Configure(int lpm, int32_t imagewidth, int32_t BitsPerPixel, int32_t carrier,
                    int32_t deviation, enum firfilter::Bandwidth bandwidth,
                    double minus_saturation_threshold, bool bIncludeHeadersInImages,
-                   bool use_phasing, bool autostop, int32_t debug, bool reset, double sample_rate, double srcorr);
+                   bool use_phasing, bool autostop, int32_t debug, bool reset, double sample_rate, double srcorr, int32_t lineLimit);
 
-    void ProcessSamples(int16_t *samps, int32_t nsamps, float shift);
+    bool ProcessSamples(int16_t *samps, int32_t nsamps, float shift);
     void FileOpen(const char *);
     void FileWrite(uint8_t *data, int32_t datalen);
     void FileClose();
@@ -165,6 +166,7 @@ private:
     int32_t phasingLinesLeft, phasingSkipData;
     bool have_phasing;
     int32_t m_debug;
+    int32_t m_lineLimit;
 };
 
 // extern FaxDecoder m_FaxDecoder[MAX_RX_CHANS];

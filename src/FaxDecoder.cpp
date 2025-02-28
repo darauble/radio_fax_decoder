@@ -369,13 +369,14 @@ void FaxDecoder::DecodeImageLine(uint8_t* buffer, int32_t buffer_len, uint8_t *i
         // fprintf(stdout, "  decode 2...\n");
         int32_t pixelSamples = 0, sample = firstsample;
         pixel = 0;
-
+// printf("PIXEL: first sample [%d], last sample [%d], diff [%d], ", firstsample, lastsample, lastsample - firstsample + 1);
         do {
             pixel += buffer[sample];
             pixelSamples++;
         } while (sample++ < lastsample);
-
+// printf("pixel [%d], ", pixel);
         pixel /= pixelSamples;
+// printf("final pixel [%d]\n", pixel);
         image[i] = pixel;
     }
     
@@ -409,11 +410,15 @@ void FaxDecoder::DecodeImageLine(uint8_t* buffer, int32_t buffer_len, uint8_t *i
     }
 }
 
-void FaxDecoder::ProcessSamples(int16_t *samps, int32_t nsamps, float shift)
+bool FaxDecoder::ProcessSamples(int16_t *samps, int32_t nsamps, float shift)
 {
+    if ((m_lineLimit > 0) && (m_fax_line >= m_lineLimit)) {
+        return false;
+    }
+
     int32_t i = 0;
     
-    if (m_bEndDecoding) return;
+    if (m_bEndDecoding) return false;
     
     if (shift) m_skip = shift * m_SamplesPerLine;
 
@@ -439,6 +444,8 @@ void FaxDecoder::ProcessSamples(int16_t *samps, int32_t nsamps, float shift)
         }
     }
     m_fi -= nsamps;     // keep bounded
+
+    return true;
 }
 
 void FaxDecoder::InitializeImage()
@@ -463,7 +470,7 @@ bool FaxDecoder::Configure(int lpm, int32_t imagewidth, int32_t BitsPerPixel, in
                            int32_t deviation, enum firfilter::Bandwidth bandwidth,
                            double minus_saturation_threshold,
                            bool bIncludeHeadersInImages, bool use_phasing, bool autostop,
-                           int32_t debug, bool reset, double sample_rate, double srcorr)
+                           int32_t debug, bool reset, double sample_rate, double srcorr, int32_t lineLimit)
 {
     // m_rx_chan = rx_chan;
     m_BitsPerPixel = BitsPerPixel;
@@ -486,6 +493,7 @@ bool FaxDecoder::Configure(int lpm, int32_t imagewidth, int32_t BitsPerPixel, in
     m_phasingLines = 20;
     m_offset = 0;
     m_imgsize = 0;
+    m_lineLimit = lineLimit;
 
     firfilters[0] = firfilter(bandwidth);
     firfilters[1] = firfilter(bandwidth);
