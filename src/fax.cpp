@@ -27,7 +27,7 @@
  *                                                                                *
  **********************************************************************************
  */
-#define VERSION "1.0.6"
+#define VERSION "1.0.7"
 #include <cstdio>
 #include <cstring>
 #include <cstdint>
@@ -125,11 +125,11 @@ int main(int argc, char *const * argv)
             break;
 
             case 'd':
-                drop = atol(optarg);
+                drop += atol(optarg);
             break;
 
             case 'r':
-                drop_lines = atol(optarg);
+                drop_lines += atol(optarg);
             break;
 
             case 'p':
@@ -137,7 +137,7 @@ int main(int argc, char *const * argv)
             break;
 
             case 'x':
-                drop_pixels = atoi(optarg);
+                drop_pixels += atoi(optarg);
             break;
 
             case 'n':
@@ -214,12 +214,14 @@ int main(int argc, char *const * argv)
 
     faxdec.FileOpen(local_name.c_str());
 
+    float line_ratio = 60.0 / lpm;
+
     if (drop_lines) {
-        drop += hdr.sample_rate * drop_lines * 60 / lpm;
+        drop += hdr.sample_rate * drop_lines * line_ratio;
     }
 
     if (drop_pixels) {
-        drop += (long)((float)drop_pixels / pixels_width * hdr.sample_rate);
+        drop += (long)((float)drop_pixels / pixels_width * hdr.sample_rate * line_ratio);
     }
     
     if (drop) {
