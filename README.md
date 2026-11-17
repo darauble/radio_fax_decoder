@@ -2,6 +2,11 @@
 
 Utility to decode radio fax from recorded WAV file. Parts taken from Kiwi SDR repository at https://github.com/jks-prv/Beagle_SDR_GPS/
 
+## V1.0.8
+
+* Fix dark, low contrast images from 44100 / 48000 samples/sec recordings: the demodulator's low pass filter is now
+  designed for the actual sample rate (see NOTES.md).
+
 ## V1.0.5
 
 Finally working DC offset filter (counting average and subtracting it from samples, when shifted).

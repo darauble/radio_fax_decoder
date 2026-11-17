@@ -50,24 +50,77 @@
 /* Note: the decoding algorithms are adapted from yahfax (on sourceforge)
    which was an improved adaptation of hamfax. */
 
+// Narrow, middle and wide FIR low pass filters from ACfax.
+// These 17 taps are only meaningful at the sample rate they were made for:
+// a digital filter's cutoff is a fraction of the sample rate, not a fixed
+// frequency in Hz. They come to us via KiwiSDR, whose audio runs at 12000 Hz
+// (MIDDLE: -3 dB at ~1300 Hz, -42 dB at 3800 Hz).
+#define FIR_REF_TAP_COUNT 17
+#define FIR_REF_SAMPLE_RATE 12000.0
+static const float lpfcoeff[3][FIR_REF_TAP_COUNT] = {
+      { -7, -18, -15,  11,  56, 116, 177, 223, 240, 223, 177, 116,  56,  11, -15, -18,  -7},
+      {  0, -18, -38, -39,   0,  83, 191, 284, 320, 284, 191,  83,   0, -39, -38, -18,   0},
+      {  6,  20,   7, -42, -74, -12, 159, 353, 440, 353, 159, -12, -74, -42,   7,  20,   6}
+};
+
+static double sinc(double x)
+{
+    return (x == 0.0) ? 1.0 : sin(M_PI * x) / (M_PI * x);
+}
+
+/*
+   Build the filter for the actual sample rate. The reference taps are fine at
+   12000 Hz and below, but used as is at 48000 Hz they reach ~4x higher (-3 dB at ~5200 Hz)
+   and let through the 2*carrier (3800 Hz) mixing product, which ruins the
+   FM discriminator and makes the image dark.
+
+   So treat the reference taps as samples of a continuous impulse response
+   taken at 12000 Hz, and resample it (band limited, sinc interpolation) at the
+   real sample rate. The filter gets proportionally more taps, but keeps the same
+   response in Hz. At or below the reference rate the original taps are used.
+*/
+FaxDecoder::firfilter::firfilter(enum Bandwidth b, double sample_rate) : bandwidth(b), current(0)
+{
+    const float *ref = lpfcoeff[b];
+
+    if (sample_rate <= FIR_REF_SAMPLE_RATE) {
+        coeffs.assign(ref, ref + FIR_REF_TAP_COUNT);
+    } else {
+        const int32_t ref_center = FIR_REF_TAP_COUNT / 2;
+        const double step = FIR_REF_SAMPLE_RATE / sample_rate;   // in reference taps
+        const int32_t half = (int32_t) ceil(ref_center / step);
+        double ref_sum = 0, sum = 0;
+
+        for (int32_t k = 0; k < FIR_REF_TAP_COUNT; k++)
+            ref_sum += ref[k];
+
+        for (int32_t n = -half; n <= half; n++) {
+            double t = ref_center + n * step;
+            double h = 0;
+            for (int32_t k = 0; k < FIR_REF_TAP_COUNT; k++)
+                h += ref[k] * sinc(t - k);
+            coeffs.push_back((float) h);
+            sum += h;
+        }
+
+        // keep the same DC gain as the reference filter
+        for (auto &c : coeffs)
+            c = (float) (c * ref_sum / sum);
+    }
+
+    buffer.assign(coeffs.size(), 0.0f);
+}
+
 static float apply_firfilter(FaxDecoder::firfilter *filter, float sample)
 {
-// Narrow, middle and wide fir low pass filter from ACfax
-    #define TAP_COUNT 17
-    const int32_t tap_count = TAP_COUNT;
-    const float lpfcoeff[3][TAP_COUNT] = {
-          { -7, -18, -15,  11,  56, 116, 177, 223, 240, 223, 177, 116,  56,  11, -15, -18,  -7},
-          {  0, -18, -38, -39,   0,  83, 191, 284, 320, 284, 191,  83,   0, -39, -38, -18,   0},
-          {  6,  20,   7, -42, -74, -12, 159, 353, 440, 353, 159, -12, -74, -42,   7,  20,   6}
-    };
-
-    const float *c = lpfcoeff[filter->bandwidth];
-    const float *c_end = lpfcoeff[filter->bandwidth] + ((sizeof *lpfcoeff) / (sizeof **lpfcoeff));
-    float* const b_begin = filter->buffer;
-    float* const b_end = filter->buffer + tap_count;
+    const int32_t tap_count = filter->coeffs.size();
+    const float *c = filter->coeffs.data();
+    const float *c_end = c + tap_count;
+    float* const b_begin = filter->buffer.data();
+    float* const b_end = b_begin + tap_count;
     float sum = 0;
     
-    float *current = filter->buffer + filter->current;
+    float *current = b_begin + filter->current;
     // replace oldest value with current
     *current = sample;
     
@@ -82,9 +135,10 @@ static float apply_firfilter(FaxDecoder::firfilter *filter, float sample)
     if (--current < b_begin)
         current = b_end-1;
     
-    filter->current = current - filter->buffer;
+    filter->current = current - b_begin;
     return sum;
 }
+
 
 int qsort_intcomp(const void *elem1, const void *elem2)
 {
@@ -495,8 +549,6 @@ bool FaxDecoder::Configure(int lpm, int32_t imagewidth, int32_t BitsPerPixel, in
     m_imgsize = 0;
     m_lineLimit = lineLimit;
 
-    firfilters[0] = firfilter(bandwidth);
-    firfilters[1] = firfilter(bandwidth);
 
     m_imagewidth = imagewidth;
     // /* must reset if image width changes */
@@ -515,6 +567,11 @@ bool FaxDecoder::Configure(int lpm, int32_t imagewidth, int32_t BitsPerPixel, in
     m_SampleRateRatio = m_SamplesPerSec_frac / m_SamplesPerSec_nom;
 
     fprintf(stdout, "FAX Configure m_SamplesPerSec_frac=%0.3f m_SamplesPerSec_nom=%.3f m_SampleRateRatio=%.3f \n", m_SamplesPerSec_frac, m_SamplesPerSec_nom, m_SampleRateRatio);
+
+    // the low pass filters depend on the sample rate, so build them only when it is known
+    firfilters[0] = firfilter(bandwidth, m_SamplesPerSec_nom);
+    firfilters[1] = firfilter(bandwidth, m_SamplesPerSec_nom);
+    fprintf(stdout, "FAX Configure low pass filter taps=%zu\n", firfilters[0].coeffs.size());
 
     // if (reset) {
         // CleanUpBuffers();

@@ -31,6 +31,7 @@
 //#include "types.h"
 #include "datatypes.h"
 #include <stdint.h>
+#include <vector>
 
 #define FAX_MSG_CLEAR   255
 #define FAX_MSG_DRAW    254
@@ -43,10 +44,11 @@ public:
     struct firfilter {
         enum Bandwidth {NARROW, MIDDLE, WIDE};
         firfilter() {}
-        firfilter(enum Bandwidth b) : bandwidth(b), current(0)
-            { for(int i=0; i<17; i++) buffer[i] = 0; }
+        // Coefficients are designed for the actual sample rate, see FaxDecoder.cpp
+        firfilter(enum Bandwidth b, double sample_rate);
         enum Bandwidth bandwidth;
-        float buffer[17];
+        std::vector<float> coeffs;
+        std::vector<float> buffer;
         int32_t current;
     };
 
