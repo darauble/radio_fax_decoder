@@ -10,6 +10,8 @@ Utility to decode radio fax from recorded WAV file. Parts taken from Kiwi SDR re
   (e.g. 48000 → 12000, 44100 → 14700). Several times faster with the same image quality. Ignored when the rate is
   already low.
 * Demodulator rewritten to process whole lines in stages, which the compiler vectorises (AVX-512 / AVX / SSE / NEON).
+* AVX-512 is enabled only if a test program using it compiles **and runs** on the build machine, so the binary no
+  longer crashes with "Illegal instruction" on CPUs without AVX-512.
 
 Example: `./fax --decimate -w ~/recording-48k.wav`
 
