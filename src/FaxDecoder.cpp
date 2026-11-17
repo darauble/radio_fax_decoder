@@ -497,6 +497,12 @@ bool FaxDecoder::ProcessSamples(int16_t *samps, int32_t nsamps, float shift)
     int32_t i = 0;
     
     if (m_bEndDecoding) return false;
+
+    if (m_decim > 1) {
+        // from here on the decoder sees the input at the reduced rate
+        nsamps = Decimate(samps, nsamps);
+        samps = m_decimOut.data();
+    }
     
     if (shift) m_skip = shift * m_SamplesPerLine;
 
@@ -548,7 +554,8 @@ bool FaxDecoder::Configure(int lpm, int32_t imagewidth, int32_t BitsPerPixel, in
                            int32_t deviation, enum firfilter::Bandwidth bandwidth,
                            double minus_saturation_threshold,
                            bool bIncludeHeadersInImages, bool use_phasing, bool autostop,
-                           int32_t debug, bool reset, double sample_rate, double srcorr, int32_t lineLimit)
+                           int32_t debug, bool reset, double sample_rate, double srcorr, int32_t lineLimit,
+                           bool decimate)
 {
     // m_rx_chan = rx_chan;
     m_BitsPerPixel = BitsPerPixel;
@@ -585,6 +592,12 @@ bool FaxDecoder::Configure(int lpm, int32_t imagewidth, int32_t BitsPerPixel, in
     m_bEndDecoding = false;
     m_debug = debug;
     fprintf(stdout, "FAX Configure lpm=%d car=%.3f dev=%.3f debug=%d\n", m_lpm, m_carrier, m_deviation, m_debug);
+
+    m_decim = 1;
+    if (decimate) {
+        SetupDecimation(sample_rate);
+        sample_rate /= m_decim;
+    }
 
     m_SamplesPerSec_frac = sample_rate * srcorr;// * 1.000092;
     m_SamplesPerSec_nom = sample_rate;
@@ -639,6 +652,95 @@ void FaxDecoder::SetupBuffers()
     // we reset at start and stop, so if already offset phasing will follow
     if (m_offset)
         phasingLinesLeft = m_phasingLines;
+}
+
+/*
+    Optional decimation (--decimate): reduce high sample rates (44100, 48000, ...)
+    by an integer factor to about 12000 Hz before decoding. The fax signal itself
+    lives below ~4 kHz, so the extra samples only cost time: at 48000 Hz the
+    demodulator does 4x the work for the same image.
+
+    The anti-aliasing low pass filter is a Blackman windowed sinc with the cutoff
+    at half the output rate. It must keep everything the decoder looks at
+    (carrier +- ~2 kHz) and reject everything that would fold onto it (from
+    output rate - (carrier + 2 kHz) upwards), by > 70 dB. Only every m_decim-th
+    output is computed.
+*/
+void FaxDecoder::SetupDecimation(double sample_rate)
+{
+    const double min_out_rate = 12000.0;        // what KiwiSDR uses, and the filters were made for
+    const double pass = m_carrier + 2000.0;     // highest frequency the decoder uses
+
+    // the transition band must be wide enough for a short filter
+    int32_t decim = (int32_t) (sample_rate / min_out_rate);
+    while (decim >= 2 && sample_rate / decim < 2 * pass + 2000.0)
+        decim--;
+
+    if (decim < 2) {
+        fprintf(stdout, "FAX decimation not possible at %.0f Hz, ignored\n", sample_rate);
+        return;
+    }
+
+    const double out_rate = sample_rate / decim;
+    const double stop = out_rate - pass;
+    int32_t taps = (int32_t) ceil(5.5 * sample_rate / (stop - pass)) | 1;    // Blackman: ~5.5/N transition
+    const int32_t center = taps / 2;
+    const double wc = (out_rate / 2) / sample_rate;    // cutoff, in cycles per sample
+
+    m_decimTaps.resize(taps);
+    double sum = 0;
+    for (int32_t i = 0; i < taps; i++) {
+        double w = 0.42 - 0.5 * cos(2 * M_PI * i / (taps - 1)) + 0.08 * cos(4 * M_PI * i / (taps - 1));
+        double h = 2 * wc * sinc(2 * wc * (i - center)) * w;
+        m_decimTaps[i] = h;
+        sum += h;
+    }
+    for (auto &h : m_decimTaps)     // unity gain
+        h /= sum;
+
+    // history of (taps - 1) samples; the first output is centred on the first input
+    // sample, so decimation does not shift the image
+    m_decimBuf.assign(taps - 1, 0.0f);
+    m_decimNext = (taps - 1) + center;
+    m_decim = decim;
+
+    fprintf(stdout, "FAX decimation by %d: %.0f -> %.1f Hz, anti-alias filter taps=%d\n",
+        decim, sample_rate, out_rate, taps);
+}
+
+// Filter and decimate nsamps input samples into m_decimOut, return how many came out.
+int32_t FaxDecoder::Decimate(const int16_t *samps, int32_t nsamps)
+{
+    const int32_t taps = m_decimTaps.size();
+    const int32_t hist = taps - 1;
+    const int32_t len = hist + nsamps;
+
+    m_decimBuf.resize(len);
+    m_decimOut.resize(nsamps / m_decim + 1);
+
+    float * __restrict__ x = m_decimBuf.data();
+    for (int32_t i = 0; i < nsamps; i++)
+        x[hist + i] = samps[i];
+
+    // Symmetric filter, so a dot product over the window ending at 'pos'.
+    // The inner loop is a reduction; -Ofast (-ffast-math) lets the compiler vectorise it.
+    const float * __restrict__ h = m_decimTaps.data();
+    int32_t out = 0, pos = m_decimNext;
+    for (; pos < len; pos += m_decim) {
+        const float * __restrict__ w = x + pos - hist;
+        float acc = 0;
+        for (int32_t k = 0; k < taps; k++)
+            acc += h[k] * w[k];
+        acc = fminf(fmaxf(roundf(acc), -32768.0f), 32767.0f);
+        m_decimOut[out++] = (int16_t) acc;
+    }
+
+    // keep the last (taps - 1) samples as history
+    memmove(x, x + nsamps, hist * sizeof *x);
+    m_decimBuf.resize(hist);
+    m_decimNext = pos - nsamps;
+
+    return out;
 }
 
 void FaxDecoder::FreeImage()

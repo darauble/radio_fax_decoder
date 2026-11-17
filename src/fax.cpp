@@ -77,11 +77,13 @@ int main(int argc, char *const * argv)
     int no_phasing {0};
     int auto_stop {0};
     int remove_dc {0};
+    int decimate {0};
 
     static struct option long_options[] =
     {
         {"no_header",   no_argument,  &no_header, 1},
         {"remove_dc",   no_argument,  &remove_dc, 1},
+        {"decimate",    no_argument,  &decimate, 1},
         {"auto_stop",   auto_stop,    &auto_stop, 1},
 
         {"wav_file",    required_argument, 0, 'w'},
@@ -209,7 +211,8 @@ int main(int argc, char *const * argv)
         false, // reset
         hdr.sample_rate,
         srcorr,
-        line_limit
+        line_limit,
+        decimate
     );
 
     faxdec.FileOpen(local_name.c_str());

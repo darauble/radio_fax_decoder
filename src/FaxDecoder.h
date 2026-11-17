@@ -84,7 +84,8 @@ public:
     bool Configure(int lpm, int32_t imagewidth, int32_t BitsPerPixel, int32_t carrier,
                    int32_t deviation, enum firfilter::Bandwidth bandwidth,
                    double minus_saturation_threshold, bool bIncludeHeadersInImages,
-                   bool use_phasing, bool autostop, int32_t debug, bool reset, double sample_rate, double srcorr, int32_t lineLimit);
+                   bool use_phasing, bool autostop, int32_t debug, bool reset, double sample_rate, double srcorr, int32_t lineLimit,
+                   bool decimate = false);
 
     bool ProcessSamples(int16_t *samps, int32_t nsamps, float shift);
     void FileOpen(const char *);
@@ -108,6 +109,8 @@ private:
     void DemodulateData();
 
     void SetupBuffers();
+    void SetupDecimation(double sample_rate);
+    int32_t Decimate(const int16_t *samps, int32_t nsamps);
     void CleanUpBuffers();
 
     int32_t m_rx_chan;
@@ -145,6 +148,13 @@ private:
     // the filtered buffers start with the last sample of the previous line.
     std::vector<float> m_carrierCycle, m_mixI, m_mixQ, m_filtI, m_filtQ;
     double m_carrierPhase {0.0};    // in carrier cycles, continuous from line to line
+
+    // Optional decimation of the input (--decimate)
+    int32_t m_decim {1};            // factor, 1 = off
+    std::vector<float> m_decimTaps;
+    std::vector<float> m_decimBuf;      // filter history followed by the current input
+    int32_t m_decimNext {0};            // index in m_decimBuf of the next output sample
+    std::vector<int16_t> m_decimOut;
     bool m_bSkipHeaderDetection;
     bool m_bIncludeHeadersInImages;
     bool m_use_phasing;
