@@ -1,7 +1,9 @@
-add_compile_options(-std=c++20 -Ofast -ftree-loop-vectorize -ftree-vectorize)
+# The fax library. Its own compile options are PRIVATE, so projects using it
+# are not built with -Ofast or AVX-512 flags.
 
-# WAV files over 2 GB (e.g. 6 hours at 48 kHz) on 32-bit systems like Raspberry Pi OS
-add_compile_definitions(_FILE_OFFSET_BITS=64)
+# DSP code: speed first. -Ofast (fast-math) also lets GCC vectorise reductions and
+# use glibc's vector sin/cos (libmvec).
+set(FAX_DSP_OPTIONS -Ofast -ftree-loop-vectorize -ftree-vectorize)
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|i[3-6]86)$")
     # Use AVX-512 only if the compiler supports it AND this machine's CPU can run it.
@@ -26,19 +28,35 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|i[3-6]86)$")
 
     if(HAVE_AVX512)
         message(STATUS "AVX-512 supported, enabling it")
-        add_compile_options(${AVX512_FLAGS})
+        list(APPEND FAX_DSP_OPTIONS ${AVX512_FLAGS})
     else()
         message(STATUS "AVX-512 not supported by this CPU or compiler, using generic code")
     endif()
 endif()
 
-add_library(libfax STATIC FaxDecoder.cpp SlantEstimator.cpp)
+configure_file(${PROJECT_SOURCE_DIR}/cmake/Version.h.in ${PROJECT_BINARY_DIR}/include/fax/Version.h @ONLY)
 
-add_executable(fax fax.cpp avg.cpp)
-target_link_libraries(fax libfax)
+add_library(fax STATIC
+    Decoder.cpp
+    FileDecoder.cpp
+    PgmWriter.cpp
+    Wav.cpp
+    FaxDecoder.cpp
+    SlantEstimator.cpp
+    avg.cpp
+)
+add_library(fax::fax ALIAS fax)
 
-include(GNUInstallDirs)
-install(TARGETS fax)
-install(FILES FaxDecoder.h TYPE INCLUDE)
-install(FILES SlantEstimator.h TYPE INCLUDE)
-install(FILES datatypes.h TYPE INCLUDE)
+target_include_directories(fax
+    PUBLIC
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+target_compile_features(fax PUBLIC cxx_std_20)
+set_target_properties(fax PROPERTIES CXX_EXTENSIONS OFF)
+target_compile_options(fax PRIVATE ${FAX_DSP_OPTIONS})
+# WAV files over 2 GB (e.g. 6 hours at 48 kHz) on 32-bit systems like Raspberry Pi OS
+target_compile_definitions(fax PRIVATE _FILE_OFFSET_BITS=64)

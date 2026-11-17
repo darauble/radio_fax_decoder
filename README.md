@@ -2,6 +2,28 @@
 
 Utility to decode radio fax from recorded WAV file. Parts taken from Kiwi SDR repository at https://github.com/jks-prv/Beagle_SDR_GPS/
 
+## V1.1.0
+
+The decoder is now a library (`fax::fax`, headers in `include/fax/`), and the `fax` command is
+only its frontend (`apps/fax/fax.cpp`). Other programs, like a GUI or the planned `fax-station`
+scheduler, can use the same functions:
+
+* `fax::decode_file()` / `fax::find_clock_correction()`: recordings, with log and progress
+  callbacks (progress can cancel).
+* `fax::Decoder`: streaming decoder, push audio as it arrives (for live decoding).
+* `fax::WavReader`, `fax::PgmWriter`, `fax::SlantEstimator`.
+
+Use from CMake with `add_subdirectory()` / `FetchContent` (target `fax::fax`; the command line
+tool is then not built), or install it and use `find_package(fax)`.
+
+Changes for users of the command:
+
+* The binary is now at `build/apps/fax/fax`.
+* WAV files are read chunk by chunk: extra chunks (e.g. `LIST` metadata after the audio)
+  are no longer decoded as audio. Non-PCM and non-16-bit files are refused with a message.
+* `-p` (pixels) now works as a short option, `--no_phasing` no longer wants an argument.
+* An output file that can't be written is an error (it used to decode with no output).
+
 ## V1.0.9
 
 Automatic clock (slant) correction, measured from the image itself:

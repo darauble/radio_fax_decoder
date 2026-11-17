@@ -31,9 +31,14 @@
 //#include "types.h"
 #include "datatypes.h"
 #include <stdint.h>
+#include <functional>
 #include <vector>
 
-class SlantEstimator;
+#include "fax/Log.h"
+
+namespace fax { class SlantEstimator; }
+
+// Internal decoder (from KiwiSDR / OpenCPN weatherfax). The public API is fax::Decoder.
 
 #define FAX_MSG_CLEAR   255
 #define FAX_MSG_DRAW    254
@@ -55,8 +60,6 @@ public:
     FaxDecoder():
         m_rx_chan {0},
         m_fn {NULL},
-        //int m_file,
-        m_file {NULL},
         m_bEndDecoding {false},
         m_SamplesPerSec_nom {0.0},
         m_SamplesPerSec_frac {0.0},
@@ -89,17 +92,15 @@ public:
                    bool use_phasing, bool autostop, int32_t debug, bool reset, double sample_rate, double srcorr, int32_t lineLimit,
                    bool decimate = false);
 
-    bool ProcessSamples(int16_t *samps, int32_t nsamps, float shift);
+    bool ProcessSamples(const int16_t *samps, int32_t nsamps, float shift);
 
     // Analysis mode: demodulated lines go to the estimator, no image is produced
-    void SetSlantEstimator(SlantEstimator *estimator) { m_slant = estimator; }
-    void FileOpen(const char *);
-    void FileWrite(uint8_t *data, int32_t datalen);
-    void FileClose();
-    
-    bool DecodeFaxFromFilename();
-    bool DecodeFaxFromDSP();
-    bool DecodeFaxFromPortAudio();
+    void SetSlantEstimator(fax::SlantEstimator *estimator) { m_slant = estimator; }
+
+    // set before Configure() to get its messages too
+    void SetLog(fax::LogHandler log) { m_log = std::move(log); }
+    void SetLineSink(std::function<void(const uint8_t *, int)> sink) { m_lineSink = std::move(sink); }
+    int32_t Lines() const { return m_fax_line; }
 
     void InitializeImage();
     void FreeImage();
@@ -120,8 +121,6 @@ private:
 
     int32_t m_rx_chan;
     char *m_fn;
-    //int m_file;
-    FILE *m_file;
     int32_t m_fax_line;
     bool m_bEndDecoding;        /* flag to end decoding thread */
     double m_SamplesPerSec_nom;
@@ -155,7 +154,12 @@ private:
     double m_carrierPhase {0.0};    // in carrier cycles, continuous from line to line
 
     // Optional decimation of the input (--decimate)
-    SlantEstimator *m_slant {nullptr};
+    fax::SlantEstimator *m_slant {nullptr};
+    fax::LogHandler m_log;
+    std::function<void(const uint8_t *, int)> m_lineSink;
+
+    void Log(fax::LogLevel level, const char *fmt, ...) __attribute__((format(printf, 3, 4)));
+    void EmitLine();
 
     int32_t m_decim {1};            // factor, 1 = off
     std::vector<float> m_decimTaps;

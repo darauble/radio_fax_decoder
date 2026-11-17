@@ -32,12 +32,14 @@
     if needed), which costs very little precision on such long recordings.
 */
 
-#include "SlantEstimator.h"
+#include "fax/SlantEstimator.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+
+namespace fax {
 
 static_assert(SlantEstimator::FIRST_BIN + SlantEstimator::BINS <= SlantEstimator::WIDTH / 2, "bins above Nyquist");
 
@@ -180,7 +182,11 @@ void SlantEstimator::Compact()
     m_used.resize(keep);
     m_chunks.resize((keep + CHUNK - 1) / CHUNK);
     m_stride *= 2;
-    fprintf(stdout, "Slant analysis: memory budget reached, keeping every %d. line\n", m_stride);
+    if (m_log) {
+        char msg[96];
+        snprintf(msg, sizeof msg, "Slant analysis: memory budget reached, keeping every %d. line", m_stride);
+        m_log(LogLevel::Info, msg);
+    }
 }
 
 /*
@@ -330,3 +336,5 @@ SlantEstimator::Result SlantEstimator::Estimate()
     }
     return r;
 }
+
+} // namespace fax

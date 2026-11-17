@@ -15,6 +15,10 @@
 #include <utility>
 #include <vector>
 
+#include "fax/Log.h"
+
+namespace fax {
+
 class SlantEstimator
 {
 public:
@@ -45,6 +49,8 @@ public:
 
     // call once, after the last line
     Result Estimate();
+
+    void SetLog(LogHandler log) { m_log = std::move(log); }
 
     static constexpr double MIN_CONFIDENCE = 2.0;
 
@@ -77,4 +83,8 @@ private:
     // FFT work
     std::vector<float> m_twr, m_twi, m_fr, m_fi, m_cols;
     std::vector<int32_t> m_rev;
+
+    LogHandler m_log;
 };
+
+} // namespace fax
