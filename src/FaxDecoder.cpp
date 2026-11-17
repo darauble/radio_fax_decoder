@@ -30,6 +30,7 @@
 
 //#include "types.h"
 #include "FaxDecoder.h"
+#include "SlantEstimator.h"
 #include "mem.h"
 
 #include <math.h>
@@ -198,6 +199,15 @@ bool FaxDecoder::DecodeFaxLine()
     
     DemodulateData();
 
+    if (m_slant) {
+        // clock error analysis (--find-scorr, --auto-scorr): only collect the lines
+        m_slant->AddLine(m_demod_data, m_SamplesPerLine);
+        m_fax_line++;
+        if (m_fax_line % 1000 == 0)
+            fprintf(stdout, "Lines analysed: %d\n", m_fax_line);
+        return true;
+    }
+
     enum Header type;
     if (m_bSkipHeaderDetection) {
         type = IMAGE;
@@ -278,12 +288,6 @@ bool FaxDecoder::DecodeFaxLine()
 
     /* go past the phasing lines we are skipping to make sure we are in the image */
     if (m_bIncludeHeadersInImages || !m_use_phasing || (type == IMAGE && phasingLinesLeft < -phasingSkipLines)) {
-        if (m_imageline >= height) {
-            height *= 2;
-            m_imgdata = (uint8_t*) kiwi_irealloc("DecodeFaxLine", m_imgdata, m_imagewidth*height*m_imagecolors);
-            fprintf(stdout, "Kiwi realloc %d, %d, %d\n", m_imagewidth, height, m_imagecolors);
-        }
-
         /*
             if (m_imageline == 10) {
                 m_autostopped = true;
@@ -297,8 +301,12 @@ bool FaxDecoder::DecodeFaxLine()
             }
         */
 
+        // only the previous line is needed (for blending), so two line buffers take turns
+        const int32_t linebytes = m_imagewidth*m_imagecolors;
         if (!m_autostopped)
-            DecodeImageLine(m_demod_data, m_SamplesPerLine, m_imgdata+imgpos);
+            DecodeImageLine(m_demod_data, m_SamplesPerLine,
+                            m_imgdata + (m_imageline & 1) * linebytes,
+                            m_imgdata + ((m_imageline + 1) & 1) * linebytes);
         
         // fprintf(stdout, "Line decoded: %d\n", m_SamplesPerLine);
 
@@ -427,7 +435,7 @@ void FaxDecoder::DemodulateData()
     Buffer should contain m_SamplesPerSec_nom*60.0/m_lpm*colors bytes.
     Image will contain imagewidth*colors bytes.
 */
-void FaxDecoder::DecodeImageLine(uint8_t* buffer, int32_t buffer_len, uint8_t *image)
+void FaxDecoder::DecodeImageLine(uint8_t* buffer, int32_t buffer_len, uint8_t *image, const uint8_t *prev_image)
 {
     int32_t pixel;
     //int n = m_SamplesPerSec_nom*60.0/m_lpm;
@@ -438,7 +446,7 @@ void FaxDecoder::DecodeImageLine(uint8_t* buffer, int32_t buffer_len, uint8_t *i
         fprintf(stderr, "DecodeImageLine requires specific buffer length");
     }
 
-    int32_t i, j;
+    int32_t i;
 
     for (i = 0; i < m_imagewidth; i++) {
         
@@ -468,9 +476,8 @@ void FaxDecoder::DecodeImageLine(uint8_t* buffer, int32_t buffer_len, uint8_t *i
             if (m_imageline != 0 && m_lineIncrAcc != 0) {
                 m_lineNextBlend = m_lineIncrAcc/m_lineBlend;
                 m_linePrevBlend = 1.0 - m_lineNextBlend;
-                j = -m_imagewidth;
-                for (i = 0; i < m_imagewidth; i++, j++) {
-                    pixel = roundf((float)image[i] * m_lineNextBlend + (float)image[j] * m_linePrevBlend);
+                for (i = 0; i < m_imagewidth; i++) {
+                    pixel = roundf((float)image[i] * m_lineNextBlend + (float)prev_image[i] * m_linePrevBlend);
                     pixel = MIN(255, pixel);
                     m_outImage[i] = pixel;
                 }
@@ -534,11 +541,10 @@ bool FaxDecoder::ProcessSamples(int16_t *samps, int32_t nsamps, float shift)
 
 void FaxDecoder::InitializeImage()
 {
-    height = m_imgsize / 2 / m_SamplesPerSec_nom / 60.0 * m_lpm;
+    // The image goes straight to the file; only the current and the previous
+    // line are kept (the whole image used to be kept and grown, ~80 MB for 6 hours)
+    height = 2;
     imgpos = 0;
-
-    if (height == 0) /* for unknown size, start out at 256 */
-        height = 256;
 
     FreeImage();
     m_imgdata  = (uint8_t*) kiwi_imalloc("InitializeImage", m_imagewidth*height*m_imagecolors);

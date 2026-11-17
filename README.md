@@ -2,6 +2,32 @@
 
 Utility to decode radio fax from recorded WAV file. Parts taken from Kiwi SDR repository at https://github.com/jks-prv/Beagle_SDR_GPS/
 
+## V1.0.9
+
+Automatic clock (slant) correction, measured from the image itself:
+
+* `--find-scorr` analyses the recording and prints the `-s` value to use, no image is written.
+* `--auto-scorr` analyses, then decodes with that correction (two passes).
+
+It finds the drift that makes the sharp vertical details (frame, margins, text) line up best,
+over the whole recording. With an existing `-s` it measures what is left and prints the total.
+Works with `--decimate`, `-L` (analyse only the first lines), `-d`/`-r`/`-x`.
+If the image has no usable vertical structure (noise, no picture), it says so and `--auto-scorr`
+decodes with the given `-s`.
+
+Example output:
+
+```
+Slant analysis: 2377 lines, 1876 with picture content, confidence 4.0 (min 2.0)
+  lines      0 -   1187 (   0.0 -    9.9 min): -s -58.98
+  lines   1188 -   2376 (   9.9 -   19.8 min): -s -58.92
+Clock correction: -s -58.92
+```
+
+The per-part values show whether the clock drifts during the recording (e.g. a sound card warming up).
+Long recordings are fine: the analysis needs at most ~75 MB of memory (6 hours tested), the decoder
+no longer keeps the whole image in memory, and WAV files over 2 GB open on 32-bit systems.
+
 ## V1.0.8
 
 * Fix dark, low contrast images from 44100 / 48000 samples/sec recordings: the demodulator's low pass filter is now

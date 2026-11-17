@@ -33,6 +33,8 @@
 #include <stdint.h>
 #include <vector>
 
+class SlantEstimator;
+
 #define FAX_MSG_CLEAR   255
 #define FAX_MSG_DRAW    254
 #define FAX_MSG_SCOPE   0       // channel 0, 1, 2, 3
@@ -88,6 +90,9 @@ public:
                    bool decimate = false);
 
     bool ProcessSamples(int16_t *samps, int32_t nsamps, float shift);
+
+    // Analysis mode: demodulated lines go to the estimator, no image is produced
+    void SetSlantEstimator(SlantEstimator *estimator) { m_slant = estimator; }
     void FileOpen(const char *);
     void FileWrite(uint8_t *data, int32_t datalen);
     void FileClose();
@@ -134,7 +139,7 @@ private:
 
     float FourierTransformSub(uint8_t* buffer, int32_t samps_per_line, int32_t buffer_len, int32_t freq);
     Header DetectLineType(uint8_t* buffer, int32_t samps_per_line, int32_t buffer_len);
-    void DecodeImageLine(uint8_t* buffer, int32_t buffer_len, uint8_t *image);
+    void DecodeImageLine(uint8_t* buffer, int32_t buffer_len, uint8_t *image, const uint8_t *prev_image);
     int32_t FaxPhasingLinePosition(uint8_t *image, int32_t samplesPerLine);
     void UpdateSampleRate();
 
@@ -150,6 +155,8 @@ private:
     double m_carrierPhase {0.0};    // in carrier cycles, continuous from line to line
 
     // Optional decimation of the input (--decimate)
+    SlantEstimator *m_slant {nullptr};
+
     int32_t m_decim {1};            // factor, 1 = off
     std::vector<float> m_decimTaps;
     std::vector<float> m_decimBuf;      // filter history followed by the current input

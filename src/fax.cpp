@@ -27,7 +27,7 @@
  *                                                                                *
  **********************************************************************************
  */
-#define VERSION "1.0.8"
+#define VERSION "1.0.9"
 #include <cstdio>
 #include <cstring>
 #include <cstdint>
@@ -41,6 +41,7 @@
 
 #include "avg.h"
 #include "FaxDecoder.h"
+#include "SlantEstimator.h"
 
 struct wav_header_t {
     char signature[4];            // "RIFF"
@@ -57,6 +58,32 @@ struct wav_header_t {
     char data_marker[4];          // "data"
     uint32_t data_size;
 };
+
+// Feed the samples (from data_start + drop) to the decoder, until the end of the file or line limit
+static void decode_pass(FaxDecoder &faxdec, FILE *fd, off_t data_start, long drop,
+                        int16_t *readbuf, size_t read_buf_size, uint32_t sample_rate, bool remove_dc)
+{
+    fseeko(fd, data_start + (off_t) drop * (off_t) sizeof(int16_t), SEEK_SET);
+
+    size_t nread;
+    bool continue_reading = true;
+
+    while (continue_reading && (nread = fread(readbuf, sizeof(int16_t), read_buf_size, fd)) > 0) {
+        if (remove_dc) {
+            float avg = FLOAT_AVERAGE(readbuf, nread);
+            SAMPLES_SUBTRACT(readbuf, nread, avg);
+        }
+
+        for (size_t i = 0; i < nread; i += sample_rate) {
+            size_t sample_length = (nread - i < sample_rate) ? nread - i : sample_rate;
+            continue_reading = faxdec.ProcessSamples(&readbuf[i], sample_length, 0);
+
+            if (!continue_reading) {
+                break;
+            }
+        }
+    }
+}
 
 int main(int argc, char *const * argv)
 {
@@ -78,12 +105,16 @@ int main(int argc, char *const * argv)
     int auto_stop {0};
     int remove_dc {0};
     int decimate {0};
+    int find_scorr {0};
+    int auto_scorr {0};
 
     static struct option long_options[] =
     {
         {"no_header",   no_argument,  &no_header, 1},
         {"remove_dc",   no_argument,  &remove_dc, 1},
         {"decimate",    no_argument,  &decimate, 1},
+        {"find-scorr",  no_argument,  &find_scorr, 1},
+        {"auto-scorr",  no_argument,  &auto_scorr, 1},
         {"auto_stop",   auto_stop,    &auto_stop, 1},
 
         {"wav_file",    required_argument, 0, 'w'},
@@ -170,7 +201,10 @@ int main(int argc, char *const * argv)
 
     wav_header_t hdr;
     
-    auto nread = fread(&hdr, sizeof(wav_header_t), 1, fd);
+    if (fread(&hdr, sizeof(wav_header_t), 1, fd) != 1) {
+        fprintf(stderr, "%s: too short for a WAV file\n", file_name);
+        exit(EXIT_FAILURE);
+    }
 
     fprintf(stdout, "Sample rate: %d\n", hdr.sample_rate);
     fprintf(stdout, "   Channels: %d\n", hdr.channels);
@@ -192,30 +226,8 @@ int main(int argc, char *const * argv)
     
     // auto readbuf = new int16_t[read_buf_size];
     auto readbuf = (int16_t *)operator new (sizeof(int16_t) * read_buf_size, std::align_val_t(64));
-    int16_t *inbuf;
 
-    FaxDecoder faxdec;
-
-    faxdec.Configure(
-        lpm,
-        pixels_width,
-        8,
-        center_freq,
-        400,
-        FaxDecoder::firfilter::MIDDLE,     // bandwidth
-        15.0,       // double minus_saturation_threshold
-        !no_header,       // bool bIncludeHeadersInImages
-        !no_phasing, // Phasing
-        auto_stop, // Autostop, not very useful, can cause dropouts in long faxes
-        false, // Debug
-        false, // reset
-        hdr.sample_rate,
-        srcorr,
-        line_limit,
-        decimate
-    );
-
-    faxdec.FileOpen(local_name.c_str());
+    const off_t data_start = ftello(fd);
 
     float line_ratio = 60.0 / lpm;
 
@@ -226,56 +238,81 @@ int main(int argc, char *const * argv)
     if (drop_pixels) {
         drop += (long)((float)drop_pixels / pixels_width * hdr.sample_rate * line_ratio);
     }
-    
-    if (drop) {
-        fseek(fd, ftell(fd) + (drop * sizeof(int16_t)), SEEK_SET);
+
+    auto configure = [&](FaxDecoder &faxdec, double sr_corr, bool analysis) {
+        faxdec.Configure(
+            lpm,
+            pixels_width,
+            8,
+            center_freq,
+            400,
+            FaxDecoder::firfilter::MIDDLE,     // bandwidth
+            15.0,       // double minus_saturation_threshold
+            !no_header,       // bool bIncludeHeadersInImages
+            !no_phasing && !analysis, // Phasing: its jumps would break the slant analysis
+            auto_stop && !analysis, // Autostop, not very useful, can cause dropouts in long faxes
+            false, // Debug
+            false, // reset
+            hdr.sample_rate,
+            sr_corr,
+            line_limit,
+            decimate
+        );
+    };
+
+    if (find_scorr || auto_scorr) {
+        // Pass 1: measure the clock error from the slant of the image
+        fprintf(stdout, "Analysing the image slant...\n");
+        SlantEstimator estimator;
+        {
+            FaxDecoder analyser;
+            configure(analyser, srcorr, true);
+            analyser.SetSlantEstimator(&estimator);
+            decode_pass(analyser, fd, data_start, drop, readbuf, read_buf_size, hdr.sample_rate, remove_dc);
+        }
+        SlantEstimator::Result res = estimator.Estimate();
+
+        const double base_ppm = (srcorr - 1) * 1e6;
+        auto total_ppm = [&](double residual) { return (srcorr * (1 + residual * 1e-6) - 1) * 1e6; };
+
+        fprintf(stdout, "\nSlant analysis: %d lines, %d with picture content%s, confidence %.1f (min %.1f)\n",
+                res.lines, res.used_lines, res.stride > 1 ? " (sparse)" : "", res.confidence,
+                SlantEstimator::MIN_CONFIDENCE);
+
+        if (res.valid) {
+            for (auto &seg : res.segments) {
+                fprintf(stdout, "  lines %6d - %6d (%6.1f - %6.1f min): -s %.2f\n", seg.first_line, seg.last_line,
+                        seg.first_line * line_ratio / 60, (seg.last_line + 1) * line_ratio / 60, total_ppm(seg.ppm));
+            }
+            fprintf(stdout, "Clock correction: -s %.2f", total_ppm(res.ppm));
+            if (base_ppm != 0)
+                fprintf(stdout, "  (given -s %.2f, measured remaining %+.2f ppm)", base_ppm, res.ppm);
+            fprintf(stdout, "\n");
+            srcorr *= 1 + res.ppm * 1e-6;
+        } else {
+            fprintf(stdout, "Clock correction: not found, the image has too little vertical structure%s\n",
+                    auto_scorr ? "; decoding with the given -s" : "");
+        }
+
+        if (!auto_scorr) {
+            fclose(fd);
+            operator delete(readbuf, std::align_val_t(64));
+            return res.valid ? 0 : 2;
+        }
+        fprintf(stdout, "\nDecoding with -s %.2f...\n", (srcorr - 1) * 1e6);
     }
 
-    bool continue_reading = true;
+    FaxDecoder faxdec;
+    configure(faxdec, srcorr, false);
+    faxdec.FileOpen(local_name.c_str());
 
-    while ((nread = fread(readbuf, sizeof(int16_t), read_buf_size, fd)) > 0) {
-        if (remove_dc) {
-            // ****** Time test *******
-            /*clock_t start, end;
-            start = clock();
-            float favg = int16_float_average(readbuf, nread);
-            end = clock();
-
-            printf("Calculated Float DC average: %d\n", (int16_t)favg);
-            printf("Calculated DC average: %f\n", favg);
-            printf("DC float average time: %f on %zu\n", ((double)(end - start)) / CLOCKS_PER_SEC, nread);
-            //*/
-            float avg = FLOAT_AVERAGE(readbuf, nread);
-     
-            SAMPLES_SUBTRACT(readbuf, nread, avg);
-        }
-        // fprintf(stdout, "Start processing...\n");
-
-        int sample_length = hdr.sample_rate;
-
-        for (uint64_t i = 0; i < nread; i += hdr.sample_rate) {
-            if (nread - i < hdr.sample_rate) {
-                sample_length = nread - i;
-            }
-            inbuf = &readbuf[i];
-            continue_reading = faxdec.ProcessSamples(inbuf, sample_length, 0);
-
-            if (!continue_reading) {
-                break;
-            }
-        }
-
-        if (!continue_reading) {
-            break;
-        }
-        // fprintf(stdout, "process...\n");
-    }
+    decode_pass(faxdec, fd, data_start, drop, readbuf, read_buf_size, hdr.sample_rate, remove_dc);
 
     faxdec.FileClose();
 
     fclose(fd);
-    
-    delete readbuf;
+
+    operator delete(readbuf, std::align_val_t(64));
 
     return 0;
 }

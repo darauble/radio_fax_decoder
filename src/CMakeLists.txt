@@ -1,5 +1,8 @@
 add_compile_options(-std=c++20 -Ofast -ftree-loop-vectorize -ftree-vectorize)
 
+# WAV files over 2 GB (e.g. 6 hours at 48 kHz) on 32-bit systems like Raspberry Pi OS
+add_compile_definitions(_FILE_OFFSET_BITS=64)
+
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|i[3-6]86)$")
     # Use AVX-512 only if the compiler supports it AND this machine's CPU can run it.
     # A compile-only test would always pass with GCC, but the binary would then
@@ -29,7 +32,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|i[3-6]86)$")
     endif()
 endif()
 
-add_library(libfax STATIC FaxDecoder.cpp)
+add_library(libfax STATIC FaxDecoder.cpp SlantEstimator.cpp)
 
 add_executable(fax fax.cpp avg.cpp)
 target_link_libraries(fax libfax)
@@ -37,4 +40,5 @@ target_link_libraries(fax libfax)
 include(GNUInstallDirs)
 install(TARGETS fax)
 install(FILES FaxDecoder.h TYPE INCLUDE)
+install(FILES SlantEstimator.h TYPE INCLUDE)
 install(FILES datatypes.h TYPE INCLUDE)
