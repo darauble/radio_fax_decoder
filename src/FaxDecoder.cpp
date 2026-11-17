@@ -33,6 +33,7 @@
 #include "mem.h"
 
 #include <math.h>
+#include <string.h>
 
 #include <sys/types.h>
 #include <unistd.h>
@@ -79,7 +80,7 @@ static double sinc(double x)
    real sample rate. The filter gets proportionally more taps, but keeps the same
    response in Hz. At or below the reference rate the original taps are used.
 */
-FaxDecoder::firfilter::firfilter(enum Bandwidth b, double sample_rate) : bandwidth(b), current(0)
+FaxDecoder::firfilter::firfilter(enum Bandwidth b, double sample_rate) : bandwidth(b)
 {
     const float *ref = lpfcoeff[b];
 
@@ -107,38 +108,7 @@ FaxDecoder::firfilter::firfilter(enum Bandwidth b, double sample_rate) : bandwid
         for (auto &c : coeffs)
             c = (float) (c * ref_sum / sum);
     }
-
-    buffer.assign(coeffs.size(), 0.0f);
 }
-
-static float apply_firfilter(FaxDecoder::firfilter *filter, float sample)
-{
-    const int32_t tap_count = filter->coeffs.size();
-    const float *c = filter->coeffs.data();
-    const float *c_end = c + tap_count;
-    float* const b_begin = filter->buffer.data();
-    float* const b_end = b_begin + tap_count;
-    float sum = 0;
-    
-    float *current = b_begin + filter->current;
-    // replace oldest value with current
-    *current = sample;
-    
-    // convolution
-    while (current != b_end)
-        sum += (*current++) * (*c++);
-    current = b_begin;
-    while (c != c_end)
-        sum += (*current++) * (*c++);
-    
-    // point again to oldest value
-    if (--current < b_begin)
-        current = b_end-1;
-    
-    filter->current = current - b_begin;
-    return sum;
-}
-
 
 int qsort_intcomp(const void *elem1, const void *elem2)
 {
@@ -353,49 +323,103 @@ bool FaxDecoder::DecodeFaxLine()
     return true;
 }
 
+/*
+    FM demodulation of one line (m_SamplesPerLine samples).
+
+    Done in stages over whole arrays rather than sample by sample, so that
+    the compiler can vectorise every loop (SSE/AVX/AVX-512 on x86, NEON on ARM)
+    without hand-written intrinsics:
+      1. carrier phase of every sample
+      2. mix down to baseband (cos/sin are vectorised by glibc's libmvec with -Ofast)
+      3. low pass filter I and Q
+      4. FM discriminator, scaling and clamping to pixel values
+*/
 void FaxDecoder::DemodulateData()
 {
-    double f=0, ph_inc;
-    int32_t i, j, pixel;
+    const int32_t n = m_SamplesPerLine;
+    const int32_t taps = m_lpf.coeffs.size();
+    const int32_t hist = taps - 1;
 
-    // update sps for mixers
-    // UpdateSampleRate();
+    float * __restrict__ cycle = m_carrierCycle.data();
+    float * __restrict__ mixI = m_mixI.data();      // [0, hist) previous line, [hist, hist+n) this line
+    float * __restrict__ mixQ = m_mixQ.data();
+    float * __restrict__ filtI = m_filtI.data();    // [0] previous line, [1, n+1) this line
+    float * __restrict__ filtQ = m_filtQ.data();
+    const int16_t * __restrict__ samples = m_samples;
+    uint8_t * __restrict__ demod = m_demod_data;
 
-    if (m_SamplesPerSec_frac != m_SamplesPerSec_frac_prev) {
-        // ext_send_msg(m_rx_chan, false, "EXT fax_sps_changed");
-        //if (m_rx_chan == 0) faxprintf("FAX sps %.12e %.12e diff=%.3e\n", m_rx_chan,
-        //    m_SamplesPerSec_frac, m_SamplesPerSec_frac_prev, m_SamplesPerSec_frac - m_SamplesPerSec_frac_prev);
-        m_SamplesPerSec_frac_prev = m_SamplesPerSec_frac;
+    // 1. Carrier phase in cycles [0, 1). Computed from the line start, in double,
+    //    so it does not drift, and continued from the previous line, so there is
+    //    no phase jump (and a spurious pixel) at the line start.
+    const double ph_inc = m_carrier / m_SamplesPerSec_frac;
+    const double ph0 = m_carrierPhase;
+    for (int32_t i = 0; i < n; i++) {
+        double ph = ph0 + i * ph_inc;
+        cycle[i] = (float) (ph - floor(ph));
     }
-    
-    ph_inc = m_carrier/m_SamplesPerSec_frac;
+    m_carrierPhase = ph0 + n * ph_inc;
+    m_carrierPhase -= floor(m_carrierPhase);
 
-    float scale = -1.3 * (m_SamplesPerSec_nom/m_deviation/8);
-    for (i=0, j=1; i < m_SamplesPerLine; i++, j++) {
-        // mix to carrier so start/stop/black/white freqs will be relative to zero
-
-        static float normalize_sample = 1.0/32768.0;
-        float samp = m_samples[i] * normalize_sample;      // -1..0..1
-
-        float Icur = apply_firfilter(firfilters+0, samp*MCOS(K_2PI*f));
-        float Qcur = apply_firfilter(firfilters+1, samp*MSIN(K_2PI*f));
-
-        f += ph_inc;
-        if (f > 1.0) f -= 1.0;      // keep bounded
-        
-        float mag = MSQRT(Qcur*Qcur + Icur*Icur);
-        Icur /= mag;
-        Qcur /= mag;
-
-        float x = (Icur*(Qcur-Qprev) - Qcur*(Icur-Iprev)) * scale;
-        x = x/2.0 + 0.5;
-        pixel = x*255.0;
-        pixel = (pixel < 0)? 0 : ((pixel > 255)? 255 : pixel);   // clamp
-        m_demod_data[i] = (uint8_t) pixel;
-
-        Iprev = Icur;
-        Qprev = Qcur;
+    // 2. Mix to carrier so start/stop/black/white freqs will be relative to zero
+    const float normalize_sample = 1.0f / 32768.0f;     // -1..0..1
+    for (int32_t i = 0; i < n; i++) {
+        float samp = samples[i] * normalize_sample;
+        float angle = (float) K_2PI * cycle[i];
+        mixI[hist + i] = samp * cosf(angle);
+        mixQ[hist + i] = samp * sinf(angle);
     }
+
+    // 3. Low pass filter: filt[i] = sum(c[k] * mix[i - k]).
+    //    Loop over taps outside and over samples inside: the inner loop is a plain
+    //    multiply-add over contiguous arrays (no reduction), the ideal shape for SIMD.
+    //    Blocks keep the partial sums in L1 cache.
+    const float * __restrict__ c = m_lpf.coeffs.data();
+    const int32_t BLOCK = 512;
+    for (int32_t b = 0; b < n; b += BLOCK) {
+        const int32_t len = MIN(BLOCK, n - b);
+        float * __restrict__ outI = filtI + 1 + b;
+        float * __restrict__ outQ = filtQ + 1 + b;
+
+        for (int32_t j = 0; j < len; j++) {
+            outI[j] = 0;
+            outQ[j] = 0;
+        }
+
+        for (int32_t k = 0; k < taps; k++) {
+            const float ck = c[k];
+            const float * __restrict__ inI = mixI + hist - k + b;
+            const float * __restrict__ inQ = mixQ + hist - k + b;
+            for (int32_t j = 0; j < len; j++) {
+                outI[j] += ck * inI[j];
+                outQ[j] += ck * inQ[j];
+            }
+        }
+    }
+
+    // keep the filter history for the next line
+    memmove(mixI, mixI + n, hist * sizeof *mixI);
+    memmove(mixQ, mixQ + n, hist * sizeof *mixQ);
+
+    // 4. FM discriminator: sine of the phase step between consecutive samples,
+    //    (I[i-1]*Q[i] - Q[i-1]*I[i]) / (|z[i]| * |z[i-1]|), scaled so the
+    //    black..white deviation maps onto 0..255.
+    const float scale = -1.3 * (m_SamplesPerSec_nom / m_deviation / 8);
+    for (int32_t i = 0; i < n; i++) {
+        float Icur = filtI[i + 1], Qcur = filtQ[i + 1];
+        float Iprev = filtI[i], Qprev = filtQ[i];
+
+        float cross = Qcur * Iprev - Icur * Qprev;
+        float mag2 = (Icur * Icur + Qcur * Qcur) * (Iprev * Iprev + Qprev * Qprev);
+        float x = (mag2 > 0) ? cross / sqrtf(mag2) : 0;    // silence: mid grey, not NaN
+
+        x = (x * scale) * 0.5f + 0.5f;
+        float pixel = x * 255.0f;
+        pixel = fminf(fmaxf(pixel, 0.0f), 255.0f);   // clamp
+        demod[i] = (uint8_t) pixel;
+    }
+
+    filtI[0] = filtI[n];
+    filtQ[0] = filtQ[n];
 }
 
 /*
@@ -569,9 +593,8 @@ bool FaxDecoder::Configure(int lpm, int32_t imagewidth, int32_t BitsPerPixel, in
     fprintf(stdout, "FAX Configure m_SamplesPerSec_frac=%0.3f m_SamplesPerSec_nom=%.3f m_SampleRateRatio=%.3f \n", m_SamplesPerSec_frac, m_SamplesPerSec_nom, m_SampleRateRatio);
 
     // the low pass filters depend on the sample rate, so build them only when it is known
-    firfilters[0] = firfilter(bandwidth, m_SamplesPerSec_nom);
-    firfilters[1] = firfilter(bandwidth, m_SamplesPerSec_nom);
-    fprintf(stdout, "FAX Configure low pass filter taps=%zu\n", firfilters[0].coeffs.size());
+    m_lpf = firfilter(bandwidth, m_SamplesPerSec_nom);
+    fprintf(stdout, "FAX Configure low pass filter taps=%zu\n", m_lpf.coeffs.size());
 
     // if (reset) {
         // CleanUpBuffers();
@@ -600,6 +623,14 @@ void FaxDecoder::SetupBuffers()
     m_samp_idx = 0;
     m_fi = 0;
     m_demod_data = new uint8_t[m_SamplesPerLine];
+
+    const size_t hist = m_lpf.coeffs.size() - 1;
+    m_carrierCycle.assign(m_SamplesPerLine, 0.0f);
+    m_mixI.assign(hist + m_SamplesPerLine, 0.0f);
+    m_mixQ.assign(hist + m_SamplesPerLine, 0.0f);
+    m_filtI.assign(1 + m_SamplesPerLine, 0.0f);
+    m_filtQ.assign(1 + m_SamplesPerLine, 0.0f);
+    m_carrierPhase = 0;
 
     phasingPos = new int[m_phasingLines];
     phasingLinesLeft = phasingSkipData = 0;

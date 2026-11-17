@@ -48,8 +48,6 @@ public:
         firfilter(enum Bandwidth b, double sample_rate);
         enum Bandwidth bandwidth;
         std::vector<float> coeffs;
-        std::vector<float> buffer;
-        int32_t current;
     };
 
     FaxDecoder():
@@ -67,8 +65,6 @@ public:
         m_lineBlend {0.0},
         m_SamplesPerLine {0},
         m_BytesPerLine {0},
-        Iprev {0.0},
-        Qprev {0.0},
         m_samples {NULL},
         m_samp_idx{0},
         m_demod_data {NULL},
@@ -127,7 +123,6 @@ private:
     int32_t m_SamplesPerLine, m_skip;
     int32_t m_BytesPerLine;
 
-    float Iprev, Qprev;
     int16_t *m_samples;
     int32_t m_samp_idx;
     uint8_t *m_demod_data;
@@ -143,7 +138,13 @@ private:
     /* fax settings */
     int32_t m_BitsPerPixel;
     double m_carrier, m_deviation;
-    struct firfilter firfilters[2];
+    struct firfilter m_lpf;
+
+    // Per line work buffers of the demodulator. The mixer buffers start with
+    // the last (taps - 1) samples of the previous line, which the low pass filter needs;
+    // the filtered buffers start with the last sample of the previous line.
+    std::vector<float> m_carrierCycle, m_mixI, m_mixQ, m_filtI, m_filtQ;
+    double m_carrierPhase {0.0};    // in carrier cycles, continuous from line to line
     bool m_bSkipHeaderDetection;
     bool m_bIncludeHeadersInImages;
     bool m_use_phasing;

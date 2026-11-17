@@ -6,6 +6,7 @@ Utility to decode radio fax from recorded WAV file. Parts taken from Kiwi SDR re
 
 * Fix dark, low contrast images from 44100 / 48000 samples/sec recordings: the demodulator's low pass filter is now
   designed for the actual sample rate (see NOTES.md).
+* Demodulator rewritten to process whole lines in stages, which the compiler vectorises (AVX-512 / AVX / SSE / NEON).
 
 ## V1.0.5
 
